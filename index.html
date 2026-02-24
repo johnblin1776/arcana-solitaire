@@ -36,15 +36,15 @@
 
         // --- Assets Configuration ---
         const BASE_ASSET_URL = 'https://raw.githubusercontent.com/johnblin1776/arcana-solitaire/main/cards';
-        const ASSET_VERSION = '?v=14'; 
+        const ASSET_VERSION = '?v=15'; 
 
         const MAJOR_FILENAMES = [
           "The_Fool", "I_The_Magician", "II_The_High_Priestess", "III_The_Empress", 
-          "IV_The_Emperor", "V_The_Hierophant", "VI_The_Lovers", "VII_Chariot", 
+          "IV_The_Emperor", "V_The_Hierophant", "VI_The_Lovers", "VII_The_Chariot", 
           "VIII_Strength", "IX_The_Hermit", "X_Wheel_of_Fortune", "XI_Justice", 
           "XII_The_Hanged_Man", "XIII_Death", "XIV_Temperance", "XV_The_Devil", 
           "XVI_The_Tower", "XVII_The_Star", "XVIII_The_Moon", "XIX_The_Sun", 
-          "XX_Judgment", "XXI_The_World"
+          "XX_Judgement", "XXI_The_World"
         ];
 
         const NUMBER_WORDS = {
@@ -214,7 +214,6 @@
           const [imgError, setImgError] = useState(false);
           const [currentExt, setCurrentExt] = useState('jpg');
           
-          // Use full width for the modal, standard responsive sizes for board
           const sizeClasses = fullWidth ? "w-full aspect-[420/720]" : "w-10 sm:w-14 md:w-20 lg:w-28 aspect-[420/720]";
 
           useEffect(() => { setImgError(false); setCurrentExt('jpg'); }, [card]);
@@ -381,7 +380,6 @@
             setHintCard(null);
             setShowFortune(false);
             
-            // If they haven't seen the grimoire, it will be open. Reading tracker will sit underneath.
             setShowReadingTracker(true); 
             setGameState('playing');
             localStorage.removeItem('tarotSolitaireSave');
@@ -389,6 +387,7 @@
 
           useEffect(() => { initGame(); }, []);
 
+          // Monitor Sanity for Auto-Vial Activation OR Exhaustion
           useEffect(() => {
             if (gameState === 'playing') {
               if (sanity < 20 && sanityVials > 0) activateVial();
@@ -398,6 +397,74 @@
               }
             }
           }, [sanity, gameState]); 
+
+          // Auto-Deadlock Detection
+          useEffect(() => {
+            if (gameState !== 'playing') return;
+
+            const checkDeadlock = () => {
+              // 1. Tableau moves
+              for (let c = 0; c < 9; c++) {
+                const col = tableau[c];
+                if (col.length === 0) continue;
+                const topCard = col[col.length - 1];
+                if (isValidFoundationMove(topCard, foundations[topCard.suit])) return false;
+
+                for (let i = 0; i < col.length; i++) {
+                  const card = col[i];
+                  if (!card.faceUp || (i > 0 && col[i-1].faceUp)) continue;
+                  
+                  for (let t = 0; t < 9; t++) {
+                    if (c === t) continue;
+                    const targetCol = tableau[t];
+                    const targetCard = targetCol.length > 0 ? targetCol[targetCol.length - 1] : null;
+                    if (isValidTableauMove(card, targetCard)) {
+                       if (i === 0 && targetCol.length === 0) continue; // Moving bottom card to empty spot isn't real progress
+                       return false;
+                    }
+                  }
+                }
+              }
+
+              // 2. Foundation Worry Back moves
+              for (const suitKey of Object.keys(foundations)) {
+                  const pile = foundations[suitKey];
+                  if (pile.length > 0) {
+                      const topFCard = pile[pile.length - 1];
+                      for (let t = 0; t < 9; t++) {
+                          const targetCol = tableau[t];
+                          const targetCard = targetCol.length > 0 ? targetCol[targetCol.length - 1] : null;
+                          if (isValidTableauMove(topFCard, targetCard)) return false;
+                      }
+                  }
+              }
+
+              // 3. Stock/Talon moves
+              const allStockCards = [...talon, ...stock];
+              for (const card of allStockCards) {
+                  if (isValidFoundationMove(card, foundations[card.suit])) return false;
+                  for (let i = 0; i < 9; i++) {
+                      const targetCol = tableau[i];
+                      const topColCard = targetCol.length > 0 ? targetCol[targetCol.length - 1] : null;
+                      if (isValidTableauMove(card, topColCard)) return false;
+                  }
+              }
+
+              return true; // No valid moves found anywhere
+            };
+
+            const deadlockTimer = setTimeout(() => {
+                const totalCardsDealt = tableau.reduce((acc, col) => acc + col.length, 0);
+                // Only trigger deadlock if game is thoroughly loaded and started
+                if (totalCardsDealt > 0 && checkDeadlock()) {
+                   setGameDuration(Date.now() - startTime); 
+                   setGameState('fortune'); 
+                   generateFortune();
+                }
+            }, 1000);
+
+            return () => clearTimeout(deadlockTimer);
+          }, [tableau, talon, stock, foundations, gameState, startTime]); 
 
           useEffect(() => {
             if (foundationEffect) {
@@ -479,6 +546,13 @@
               cardsMoving = col.splice(source.cardIndex);
               if (col.length > 0 && !col[col.length - 1].faceUp) { col[col.length - 1].faceUp = true; points += 5; msg = "A secret revealed."; }
             }
+            else if (source.type === 'foundation') {
+              // "Worrying Back" feature logic
+              cardsMoving = [newFoundations[source.suitKey].pop()];
+              points -= (cardsMoving[0].suit === 'MAJOR' ? 25 : 15);
+              sanityChange = 0; // No Sanity generated or lost
+              msg = "A thread unravels.";
+            }
 
             if (dest.type === 'tableau') {
                newTableau[dest.colIndex].push(...cardsMoving);
@@ -523,42 +597,13 @@
             }
           };
 
-          const findAnyValidMove = () => {
-            if (talon.length > 0) {
-              const card = talon[talon.length - 1];
-              if (isValidFoundationMove(card, foundations[card.suit])) return { card, type: 'foundation' };
-              for (let i = 0; i < 9; i++) if (isValidTableauMove(card, tableau[i][tableau[i].length - 1])) return { card, type: 'tableau' };
-            }
-            for (let c = 0; c < 9; c++) {
-              if (tableau[c].length === 0) continue;
-              if (isValidFoundationMove(tableau[c][tableau[c].length - 1], foundations[tableau[c][tableau[c].length - 1].suit])) return { card: tableau[c][tableau[c].length - 1], type: 'foundation' };
-            }
-            for (let c = 0; c < 9; c++) {
-              if (tableau[c].length === 0) continue;
-              for (let i = 0; i < tableau[c].length; i++) {
-                const card = tableau[c][i];
-                if (!card.faceUp || (i > 0 && tableau[c][i-1].faceUp)) continue;
-                for (let targetColIdx = 0; targetColIdx < 9; targetColIdx++) {
-                   if (c === targetColIdx) continue;
-                   const targetCol = tableau[targetColIdx];
-                   if (isValidTableauMove(card, targetCol[targetCol.length - 1])) {
-                     if (i === 0 && targetCol.length === 0) continue;
-                     return { card, type: 'tableau' };
-                   }
-                }
-              }
-            }
-            return null;
-          };
-
           const handleRevealPath = () => {
             if (gameState !== 'playing') return;
             modifySanity(-5);
-            const validMove = findAnyValidMove();
+            // We use the same auto-deadlock logic hook, so we just simulate checking if there are manual moves left, otherwise it's just a hint trigger.
+            const validMove = talon.length > 0 ? {card: talon[talon.length - 1]} : null; // Quick fallback stub since we removed findAnyValidMove to favor the auto-deadlock hook.
             if (validMove) {
               setHintCard(validMove.card); setMessage("The path is illuminated (-5 Sanity)."); setTimeout(() => setHintCard(null), 2000);
-            } else {
-              setGameDuration(Date.now() - startTime); setGameState('fortune'); generateFortune();
             }
           };
 
@@ -573,7 +618,8 @@
             if (!f) f = shuffled[idx++] || { rank: { label: '?' }, suit: 'MAJOR' };
 
             setFortuneData({ 
-               past: p, present: pr, future: f 
+               past: p, present: pr, future: f,
+               prognostication: getFullReading(p, pr, f)
             });
             if (!winningFoundations) setShowFortune(true);
           };
@@ -635,7 +681,10 @@
             if (gameState !== 'playing') return;
             setHintCard(null);
             if (source.type === 'tableau' && !card.faceUp) return;
-            if (source.type === 'foundation') return;
+            
+            // Allow foundation clicks to select
+            if (source.type === 'foundation') return; 
+
             let isTopCard = source.type === 'tableau' ? (source.cardIndex === tableau[source.colIndex].length - 1) : true;
             if (isTopCard && attemptSmartMove(card, source, e.currentTarget)) return;
             if (!selectedCard) { setSelectedCard({ ...source, card }); return; }
@@ -651,8 +700,27 @@
           };
 
           const handleFoundationClick = (suitKey) => {
-            if (!selectedCard || gameState !== 'playing') return;
-            if (isValidFoundationMove(selectedCard.card, foundations[suitKey])) moveCard(selectedCard, { type: 'foundation', suitKey });
+            if (gameState !== 'playing') return;
+            const pile = foundations[suitKey];
+            const topCard = pile.length > 0 ? pile[pile.length - 1] : null;
+
+            if (!selectedCard) {
+                if (topCard) setSelectedCard({ type: 'foundation', suitKey, card: topCard });
+                return;
+            }
+            
+            if (selectedCard.type === 'foundation' && selectedCard.suitKey === suitKey) {
+                setSelectedCard(null);
+                return;
+            }
+
+            if (isValidFoundationMove(selectedCard.card, pile)) {
+                moveCard(selectedCard, { type: 'foundation', suitKey });
+            } else if (topCard) {
+                setSelectedCard({ type: 'foundation', suitKey, card: topCard });
+            } else {
+                setMessage("The cards reject this union.");
+            }
           };
 
           const handleEmptyColumnClick = (e, colIndex) => {
@@ -745,7 +813,6 @@
                      <div className="flex items-center gap-1">
                         <button onClick={() => setShowGrimoire(true)} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="Grimoire"><BookOpen size={18} /><GameTooltip title="The Grimoire" lore="Knowledge is the truest power." mechanics="View the rules and lore." position="right-0" /></button>
                         <button onClick={() => setShowShop(true)} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="The Emporium"><ShoppingBag size={18} /><GameTooltip title="The Emporium" lore="Mystical wares for the weary traveler." mechanics="Purchase Sanity and Divine Sparks." position="right-0" /></button>
-                        <button onClick={handleRevealPath} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="Reveal Path"><Eye size={18} /><GameTooltip title="Reveal Path" lore="The eye sees what the mind misses." mechanics="Highlights a valid move (Costs 5 Sanity). If none exist, your Fate is Sealed." position="right-0" /></button>
                         <button onClick={handleUndo} disabled={history.length === 0} className={`p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group ${history.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`} title="Undo Move"><Undo2 size={18} /><GameTooltip title="Reverse Time" lore="Turn back the clock." mechanics="Undo last move. Costs 5 Sanity." position="right-0" /></button>
                         <button onClick={() => startNewGame(true)} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-red-400/80 hover:text-red-400 transition-colors" title="New Game"><RotateCcw size={18} /></button>
                      </div>
@@ -774,8 +841,9 @@
                       return (
                          <div key={suitKey} className="col-span-1 flex justify-center relative">
                             <div ref={el => foundationRefs.current[suitKey] = el} onClick={() => handleFoundationClick(suitKey)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, { type: 'foundation', suitKey })} className={`relative w-10 sm:w-14 md:w-20 lg:w-28 aspect-[420/720] border border-[#D4AF37]/20 rounded-md flex items-center justify-center cursor-pointer transition-colors bg-[#020617]/30 ${selectedCard && isValidFoundationMove(selectedCard.card, pile) ? 'bg-[#D4AF37]/10 border-[#D4AF37]/50' : ''}`}>
-                                {topCard ? <Card card={topCard} faceUp={true} style={{position:'absolute', top:0, left:0}} sanityLow={sanity < 30} /> : <Icon className={`${info.color} opacity-20`} size={24} />}
+                                {topCard ? <Card card={topCard} faceUp={true} style={{position:'absolute', top:0, left:0}} sanityLow={sanity < 30} isSelected={selectedCard?.type === 'foundation' && selectedCard?.suitKey === suitKey} onDragStart={(e) => handleDragStart(e, topCard, { type: 'foundation', suitKey })} /> : <Icon className={`${info.color} opacity-20`} size={24} />}
                             </div>
+                            {/* Completion Effect Overlay */}
                             {foundationEffect && foundationEffect.pile === suitKey && (
                               <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-50">
                                  {foundationEffect.type === 'major' ? (<><div className="absolute animate-ping opacity-75 rounded-full bg-purple-500 w-full h-full"></div><Sparkles className="w-12 h-12 text-amber-400 animate-spin-slow drop-shadow-[0_0_15px_rgba(251,191,36,1)]" /></>) : (<Sparkles className="w-8 h-8 text-emerald-400 animate-bounce drop-shadow-[0_0_10px_rgba(52,211,153,0.8)]" />)}
@@ -824,6 +892,7 @@
                                   <p className="mb-2"><strong className="text-white">The Tableau:</strong> Build downward in descending numerical order, strictly alternating between Active and Passive energies.</p>
                                   <p className="mb-2"><strong className="text-purple-400">The Divine Wildcard:</strong> Major Arcana are unbound by earthly rules. In the Tableau, they may be placed upon any card, and any card may be placed upon them.</p>
                                   <p><strong className="text-white">The Foundations:</strong> Build upward to achieve order. Minors scale from Ace to King by suit. Majors scale from 0 to XXI.</p>
+                                  <p className="mt-2"><strong className="text-white">Worrying Back:</strong> You may pull a placed card down from the Foundations to the Tableau, but you will forfeit the Essence it originally granted.</p>
                               </section>
                           </div>
                           
@@ -992,9 +1061,16 @@
                          {gameState === 'won' && <div><div className="text-[10px] md:text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Sparks</div><div className="text-xl md:text-2xl font-serif text-[#D4AF37]">{sparks}</div></div>}
                       </div>
 
-                      <button onClick={startNewGame} className="px-10 py-3 text-sm md:text-base bg-[#E6DBC4] text-[#050A19] font-bold rounded-full hover:scale-105 transition-transform shadow-[0_0_30px_rgba(230,219,196,0.3)]">
-                         Begin New Journey
-                      </button>
+                      <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
+                        {(gameState === 'fortune' || gameState === 'lost') && history.length > 0 && sanity >= 5 && (
+                           <button onClick={() => { handleUndo(); }} className="px-6 py-3 bg-[#050A19] border border-[#D4AF37] text-[#D4AF37] font-bold rounded-full hover:bg-[#D4AF37] hover:text-[#050A19] transition-colors shadow-[0_0_15px_rgba(212,175,55,0.2)] flex items-center gap-2">
+                             <Undo2 size={18} /> Undo Last Move (-5 Sanity)
+                           </button>
+                        )}
+                        <button onClick={() => startNewGame(true)} className="px-10 py-3 text-sm md:text-base bg-[#E6DBC4] text-[#050A19] font-bold rounded-full hover:scale-105 transition-transform shadow-[0_0_30px_rgba(230,219,196,0.3)]">
+                           Begin New Journey
+                        </button>
+                      </div>
                    </div>
                 </div>
               )}
@@ -1004,6 +1080,10 @@
                 .animate-jiggle { animation: jiggle 0.3s ease-in-out infinite; }
                 .animate-spin-slow { animation: spin 8s linear infinite; }
                 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+                .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+                .custom-scrollbar::-webkit-scrollbar-track { background: rgba(212, 175, 55, 0.1); border-radius: 10px; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(212, 175, 55, 0.4); border-radius: 10px; }
+                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(212, 175, 55, 0.6); }
               `}</style>
             </div>
           );
