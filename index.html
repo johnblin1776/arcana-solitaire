@@ -1,0 +1,1237 @@
+import React, { useState, useEffect, useRef, memo } from 'react';
+import { 
+  RefreshCw, RotateCcw, HelpCircle, Trophy, Sparkles, 
+  Sword, Wine, Coins, Club, Crown, Save, Download, 
+  Flame, Skull, Plus, ShoppingBag, X, Eye, Clock, Gem, FlaskConical, Undo2
+} from 'lucide-react';
+
+// --- Assets Configuration ---
+
+// Pointing to 'main' to get the latest images
+const BASE_ASSET_URL = 'https://raw.githubusercontent.com/johnblin1776/arcana-solitaire/main/cards';
+// Cache buster to ensure new images load immediately
+const ASSET_VERSION = '?v=14'; 
+
+// Removed extensions to allow dynamic checking of .jpg / .png
+const MAJOR_FILENAMES = [
+  "The_Fool",                 // 0
+  "I_The_Magician",           // 1
+  "II_The_High_Priestess",    // 2
+  "III_The_Empress",         // 3
+  "IV_The_Emperor",           // 4
+  "V_The_Hierophant",        // 5
+  "VI_The_Lovers",           // 6
+  "VII_Chariot",             // 7
+  "VIII_Strength",           // 8
+  "IX_The_Hermit",           // 9
+  "X_Wheel_of_Fortune",      // 10
+  "XI_Justice",              // 11
+  "XII_The_Hanged_Man",      // 12
+  "XIII_Death",              // 13
+  "XIV_Temperance",          // 14
+  "XV_The_Devil",            // 15
+  "XVI_The_Tower",           // 16
+  "XVII_The_Star",           // 17
+  "XVIII_The_Moon",          // 18
+  "XIX_The_Sun",             // 19
+  "XX_Judgment",             // 20
+  "XXI_The_World"            // 21
+];
+
+const NUMBER_WORDS = {
+  1: "Ace", 2: "Two", 3: "Three", 4: "Four", 5: "Five",
+  6: "Six", 7: "Seven", 8: "Eight", 9: "Nine", 10: "Ten",
+  11: "Page", 12: "Knight", 13: "Queen", 14: "King"
+};
+
+// Returns the base filename without extension
+const getCardBaseName = (card) => {
+  if (!card) return null;
+  if (card.suit === 'MAJOR') {
+    return MAJOR_FILENAMES[card.rank.val] || `major-${card.rank.val}`;
+  } else {
+    const rankWord = NUMBER_WORDS[card.rank.val];
+    const suitName = SUITS[card.suit].name; 
+    return `${rankWord}_of_${suitName}`;
+  }
+};
+
+// Returns the full display name of the card
+const getCardFullName = (card) => {
+  if (!card || !card.rank) return "Unknown Card";
+  if (card.suit === 'MAJOR') {
+    return `${card.rank.label} ${card.rank.name}`;
+  }
+  const rankName = card.rank.name || NUMBER_WORDS[card.rank.val];
+  return `${rankName} of ${SUITS[card.suit].name}`;
+};
+
+// Returns a short meaning/keyword for the card
+const getCardMeaning = (card) => {
+    // Basic stubs for meanings to prevent errors if this function was missing in the paste
+    if (card.suit === 'MAJOR') return "A major force of destiny.";
+    if (card.suit === 'WANDS') return "Energy, inspiration, and fire.";
+    if (card.suit === 'CUPS') return "Emotion, relationship, and water.";
+    if (card.suit === 'SWORDS') return "Intellect, conflict, and air.";
+    if (card.suit === 'PENTACLES') return "Possessions, practicality, and earth.";
+    return "A minor influence on your path.";
+};
+
+// Generates a full reading interpretation based on all three cards
+const getFullReading = (past, present, future) => {
+   if (!past || !present || !future) return "The mists are thick. Tread carefully.";
+   
+   const getTheme = (card) => {
+     if (card.suit === 'MAJOR') return "profound transformation";
+     if (card.suit === 'WANDS') return "fiery ambition";
+     if (card.suit === 'CUPS') return "deep emotion";
+     if (card.suit === 'SWORDS') return "sharp truth";
+     if (card.suit === 'PENTACLES') return "worldly foundation";
+     return "mystery";
+   };
+
+   const pTheme = getTheme(past);
+   const prTheme = getTheme(present);
+   const fTheme = getTheme(future);
+
+   return `You have risen from a past of ${pTheme}, navigating a present shaped by ${prTheme}. The cards foretell a destiny of ${fTheme}.`;
+};
+
+// Formats milliseconds into MM:SS
+const formatTime = (ms) => {
+  const seconds = Math.floor(ms / 1000);
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+};
+
+// --- Game Constants & Logic ---
+
+const SUITS = {
+  MAJOR:     { name: 'Major Arcana', icon: Crown, color: 'text-[#D4AF37]', type: 'ether', bgColor: 'bg-[#D4AF37]/20', borderColor: 'border-[#D4AF37]' },
+  WANDS:     { name: 'Wands',        icon: Club,  color: 'text-amber-500',  type: 'active', bgColor: 'bg-amber-900/30',  borderColor: 'border-amber-600' },
+  SWORDS:    { name: 'Swords',       icon: Sword, color: 'text-slate-400',  type: 'active', bgColor: 'bg-slate-800/50',  borderColor: 'border-slate-500' },
+  CUPS:      { name: 'Cups',         icon: Wine,  color: 'text-cyan-400',   type: 'passive', bgColor: 'bg-cyan-900/30',   borderColor: 'border-cyan-600' },
+  PENTACLES: { name: 'Pentacles',    icon: Coins, color: 'text-emerald-400',type: 'passive', bgColor: 'bg-emerald-900/30',borderColor: 'border-emerald-600' },
+};
+
+const MINOR_RANKS = [
+  { val: 1, label: 'A' }, { val: 2, label: '2' }, { val: 3, label: '3' }, { val: 4, label: '4' }, 
+  { val: 5, label: '5' }, { val: 6, label: '6' }, { val: 7, label: '7' }, { val: 8, label: '8' }, 
+  { val: 9, label: '9' }, { val: 10, label: '10' }, { val: 11, label: 'P', name: 'Page' }, 
+  { val: 12, label: 'Kn', name: 'Knight' }, { val: 13, label: 'Q', name: 'Queen' }, { val: 14, label: 'K', name: 'King' }
+];
+
+const MAJOR_RANKS = Array.from({ length: 22 }, (_, i) => ({ 
+  val: i, label: i === 0 ? '0' : romanize(i), name: getMajorName(i) 
+}));
+
+function romanize(num) {
+  if (num === 0) return '0';
+  const lookup = {X:10, IX:9, V:5, IV:4, I:1};
+  let roman = '', i;
+  for ( i in lookup ) {
+    while ( num >= lookup[i] ) {
+      roman += i;
+      num -= lookup[i];
+    }
+  }
+  return roman;
+}
+
+function getMajorName(i) {
+  const names = ["The Fool", "The Magician", "High Priestess", "Empress", "Emperor", "Hierophant", "Lovers", "Chariot", "Strength", "Hermit", "Wheel", "Justice", "Hanged Man", "Death", "Temperance", "Devil", "Tower", "Star", "Moon", "Sun", "Judgement", "World"];
+  return names[i];
+}
+
+const SHUFFLE = (array) => {
+  const newArray = [...array];
+  for (let i = newArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+  }
+  return newArray;
+};
+
+// --- Components ---
+
+// Custom Icon for Sanity - Side Profile Bald Head
+const HeadProfile = ({ size = 24, className = "" }) => (
+  <svg 
+    xmlns="http://www.w3.org/2000/svg" 
+    width={size} 
+    height={size} 
+    viewBox="0 0 24 24" 
+    fill="none" 
+    stroke="currentColor" 
+    strokeWidth="2" 
+    strokeLinecap="round" 
+    strokeLinejoin="round" 
+    className={className}
+  >
+    <path d="M16 4c-4 0-7 3-7 7 0 1.5.5 2.5 1 4-.5 1-1.5 2-3 2v3h5c1 0 2.5-.5 3.5-1.5 1 .5 2 .5 3.5.5 3 0 5-3 5-7s-3-8-8-8z" />
+    <path d="M12 11c-.5 0-1 .5-1 1" />
+  </svg>
+);
+
+const GameTooltip = ({ title, lore, mechanics, position = "left-0" }) => (
+  <div className={`absolute top-full ${position} mt-4 w-64 p-3 bg-[#050A19] border border-[#D4AF37]/40 rounded-lg shadow-[0_4px_20px_rgba(0,0,0,0.6)] opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 backdrop-blur-md`}>
+    <div className={`absolute -top-1.5 w-3 h-3 bg-[#050A19] border-t border-l border-[#D4AF37]/40 rotate-45 ${position === 'left-0' ? 'left-4' : position === 'right-0' ? 'right-4' : 'left-1/2 -translate-x-1/2'}`}></div>
+    <h4 className="font-serif font-bold text-[#D4AF37] text-sm mb-1.5 border-b border-[#D4AF37]/20 pb-1">{title}</h4>
+    <p className="text-[#E6DBC4]/80 italic text-[10px] mb-2 leading-tight">"{lore}"</p>
+    <p className="text-[#E6DBC4] text-[10px] leading-relaxed"><span className="text-[#D4AF37] font-bold">Use:</span> {mechanics}</p>
+  </div>
+);
+
+// Memoized Card
+const Card = memo(({ card, faceUp, onClick, onDoubleClick, onDragStart, isSelected, isHint, style = {}, sanityLow }) => {
+  const [imgError, setImgError] = useState(false);
+  const [currentExt, setCurrentExt] = useState('jpg');
+  
+  const sizeClasses = "w-10 sm:w-14 md:w-20 lg:w-28 aspect-[420/720]";
+
+  useEffect(() => {
+    setImgError(false);
+    setCurrentExt('jpg');
+  }, [card]);
+
+  if (!card) return <div className={`${sizeClasses} border-2 border-dashed border-[#D4AF37]/20 rounded-md bg-[#050A19]/50`} />;
+
+  const parchmentColor = "border-[#E4D4B5]";
+  const parchmentBg = "bg-[#E4D4B5]";
+  const suitConfig = SUITS[card.suit];
+  const SuitIcon = suitConfig.icon;
+  const inkColor = suitConfig.type === 'passive' ? 'text-[#8B1C1C]' : 'text-[#0F172A]';
+
+  if (!faceUp) {
+    return (
+      <div 
+        onClick={onClick}
+        className={`${sizeClasses} rounded-md border ${parchmentColor} shadow-xl cursor-pointer hover:brightness-125 transition-all relative overflow-hidden bg-cover bg-center`}
+        style={{ ...style, backgroundImage: `url('${BASE_ASSET_URL}/card_back.png${ASSET_VERSION}')` }}
+      >
+      </div>
+    );
+  }
+
+  const baseName = getCardBaseName(card);
+  const imageUrl = baseName ? `${BASE_ASSET_URL}/${baseName}.${currentExt}${ASSET_VERSION}` : null;
+  const jitter = sanityLow ? `rotate(${Math.random() * 2 - 1}deg) translate(${Math.random() * 2 - 1}px, ${Math.random() * 2 - 1}px)` : '';
+
+  // Animation for Hint (Jiggle and Glow)
+  const hintClass = isHint ? "animate-jiggle ring-4 ring-[#D4AF37] shadow-[0_0_20px_rgba(212,175,55,0.6)] z-50" : "";
+
+  const handleImageError = () => {
+    const fallbacks = { 'jpg': 'JPG', 'JPG': 'png', 'png': 'PNG', 'PNG': 'jpeg', 'jpeg': 'webp', 'webp': null };
+    const nextExt = fallbacks[currentExt];
+    if (nextExt) setCurrentExt(nextExt);
+    else {
+      console.warn(`Failed to load image for ${baseName}`);
+      setImgError(true);
+    }
+  };
+
+  return (
+    <div 
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+      draggable={true}
+      onDragStart={onDragStart}
+      className={`
+        ${sizeClasses}
+        rounded-md shadow-[0_2px_10px_rgba(0,0,0,0.5)] 
+        cursor-pointer border select-none overflow-hidden
+        transition-transform duration-200 flex flex-col bg-[#050A19]
+        ${parchmentColor} ${hintClass}
+        ${isSelected ? 'ring-2 ring-[#D4AF37] -translate-y-2 z-50' : 'hover:-translate-y-1 hover:z-40'}
+      `}
+      style={{ ...style, transform: style.transform || jitter }}
+    >
+      <div className={`h-[13%] w-full ${parchmentBg} border-b border-[#0F172A]/20 flex items-center justify-center gap-1.5 sm:gap-2 relative z-10`}>
+         <span className={`font-serif font-bold text-[8px] sm:text-[10px] md:text-xs lg:text-sm leading-none ${inkColor}`}>
+            {card.rank.label}
+         </span>
+         <SuitIcon className={`w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3.5 md:h-3.5 lg:w-4 lg:h-4 ${inkColor}`} />
+      </div>
+
+      <div className="h-[87%] w-full relative bg-[#050A19] overflow-hidden">
+        {!imgError && imageUrl ? (
+          <img 
+            src={imageUrl}
+            alt={`${card.rank.name || card.rank.label} of ${SUITS[card.suit].name}`}
+            className="absolute top-1/2 left-1/2 w-[112%] h-[112%] max-w-none -translate-x-1/2 -translate-y-1/2 object-cover pointer-events-none" 
+            onError={handleImageError}
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center p-2">
+            <div className="absolute inset-0 opacity-10 flex items-center justify-center">
+               <SuitIcon className={`w-3/4 h-3/4 ${suitConfig.color}`} />
+            </div>
+            {card.suit === 'MAJOR' && (
+              <p className="text-[6px] sm:text-[8px] text-center text-[#D4AF37] uppercase tracking-widest relative z-10 px-1">
+                {card.rank.name}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+export default function App() {
+  const [gameState, setGameState] = useState('loading'); 
+  const [deck, setDeck] = useState([]);
+  
+  const [tableau, setTableau] = useState(Array(9).fill([]));
+  const [foundations, setFoundations] = useState({ MAJOR: [], WANDS: [], CUPS: [], SWORDS: [], PENTACLES: [] });
+  const [stock, setStock] = useState([]);
+  const [talon, setTalon] = useState([]);
+  const [selectedCard, setSelectedCard] = useState(null);
+  
+  const [history, setHistory] = useState([]); // Undo History
+  const [foundationEffect, setFoundationEffect] = useState(null); // New state for pile completion effect
+
+  const [moves, setMoves] = useState(0);
+  const [score, setScore] = useState(0);
+  const [sanity, setSanity] = useState(80); // Adjusted starting Sanity to 80 for tighter balance
+  const [sparks, setSparks] = useState(3);
+  const [sanityVials, setSanityVials] = useState(0); // New Vial Inventory
+  const [startTime, setStartTime] = useState(null);
+  const [gameDuration, setGameDuration] = useState(0);
+  const [message, setMessage] = useState("Begin the ritual...");
+
+  // Modal States
+  const [showStockPicker, setShowStockPicker] = useState(false);
+  const [showShop, setShowShop] = useState(false);
+  const [showFortune, setShowFortune] = useState(false);
+  const [fortuneData, setFortuneData] = useState(null);
+
+  // Animation & Hint State
+  const foundationRefs = useRef({});
+  const tableauRefs = useRef([]);
+  const vialRef = useRef(null); // Ref for Vial icon to target animation start
+  const sanityRef = useRef(null); // Ref for Sanity meter to target animation end
+  
+  const [flyingCard, setFlyingCard] = useState(null);
+  const [flyingWisp, setFlyingWisp] = useState(null); // State for Vial Wisp animation
+  const [hintCard, setHintCard] = useState(null);
+  const [draggedCard, setDraggedCard] = useState(null);
+
+  // --- Initialization ---
+
+  const initGame = () => {
+    const savedState = localStorage.getItem('tarotSolitaireSave');
+    if (savedState) {
+      try {
+        const parsed = JSON.parse(savedState);
+        setTableau(parsed.tableau);
+        setFoundations(parsed.foundations);
+        setStock(parsed.stock);
+        setTalon(parsed.talon);
+        setMoves(parsed.moves);
+        setScore(parsed.score);
+        setSanity(parsed.sanity || 80); // Default to 80
+        setSparks(parsed.sparks || 3);
+        setSanityVials(parsed.sanityVials || 0); // Load Vials
+        setHistory(parsed.history || []);
+        setGameState('playing');
+        setStartTime(Date.now()); 
+        return;
+      } catch (e) {
+        console.error("Save corrupted", e);
+      }
+    }
+    startNewGame();
+  };
+
+  const startNewGame = () => {
+    setGameState('loading');
+    let newDeck = [];
+    ['WANDS', 'CUPS', 'SWORDS', 'PENTACLES'].forEach(suit => {
+      MINOR_RANKS.forEach(rank => {
+        newDeck.push({ suit, rank, id: `${suit}-${rank.val}`, faceUp: false });
+      });
+    });
+    MAJOR_RANKS.forEach(rank => {
+      newDeck.push({ suit: 'MAJOR', rank, id: `MAJOR-${rank.val}`, faceUp: false });
+    });
+
+    newDeck = SHUFFLE(newDeck);
+
+    const newTableau = Array(9).fill().map(() => []);
+    let cardIdx = 0;
+    for (let i = 0; i < 9; i++) {
+      for (let j = 0; j <= i; j++) {
+        const card = { ...newDeck[cardIdx] };
+        if (j === i) card.faceUp = true;
+        newTableau[i].push(card);
+        cardIdx++;
+      }
+    }
+
+    setStock(newDeck.slice(cardIdx));
+    setTalon([]);
+    setTableau(newTableau);
+    setFoundations({ MAJOR: [], WANDS: [], CUPS: [], SWORDS: [], PENTACLES: [] });
+    setMoves(0);
+    setScore(0);
+    setSanity(80); // Adjusted starting Sanity to 80
+    setSparks(3);
+    setSanityVials(0);
+    setHistory([]);
+    setStartTime(Date.now());
+    setGameDuration(0);
+    setMessage("The veil is thin.");
+    setSelectedCard(null);
+    setHintCard(null);
+    setShowFortune(false);
+    setGameState('playing');
+    
+    localStorage.removeItem('tarotSolitaireSave');
+  };
+
+  useEffect(() => { initGame(); }, []);
+
+  // Monitor Sanity for Auto-Vial Activation OR Exhaustion
+  useEffect(() => {
+    if (gameState === 'playing') {
+      if (sanity < 20 && sanityVials > 0) {
+         // Auto-activate Vial!
+         activateVial();
+      } else if (sanity <= 0) {
+         // Instead of losing immediately, open the Shop
+         setShowShop(true);
+         setMessage("Your mind fractures... seeking stability.");
+      }
+    }
+  }, [sanity, gameState]); 
+
+  // Cleanup Foundation Effect
+  useEffect(() => {
+    if (foundationEffect) {
+      const timer = setTimeout(() => setFoundationEffect(null), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [foundationEffect]);
+
+  useEffect(() => {
+    if (gameState === 'playing') {
+      const stateToSave = { tableau, foundations, stock, talon, moves, score, sanity, sparks, sanityVials, history };
+      localStorage.setItem('tarotSolitaireSave', JSON.stringify(stateToSave));
+    }
+  }, [tableau, foundations, stock, talon, moves, score, sanity, sparks, sanityVials, gameState, history]);
+
+  // --- Logic Helpers ---
+
+  const modifySanity = (amount, msg) => {
+     setSanity(prev => Math.min(80, Math.max(0, prev + amount))); // Cap at 80
+     if (msg) setMessage(msg);
+  };
+
+  const saveGameState = () => {
+    setHistory(prev => [...prev, {
+      tableau: JSON.parse(JSON.stringify(tableau)),
+      foundations: JSON.parse(JSON.stringify(foundations)),
+      stock: [...stock],
+      talon: [...talon],
+      moves,
+      score,
+      sanity,
+      sparks,
+      sanityVials,
+      gameState
+    }]);
+  };
+
+  const handleUndo = () => {
+    if (history.length === 0) return;
+    if (sanity < 5) {
+       setMessage("Not enough Sanity to reverse time.");
+       return;
+    }
+
+    const prevState = history[history.length - 1];
+    setHistory(prev => prev.slice(0, -1));
+
+    setTableau(prevState.tableau);
+    setFoundations(prevState.foundations);
+    setStock(prevState.stock);
+    setTalon(prevState.talon);
+    setMoves(prevState.moves);
+    setScore(prevState.score);
+    setSparks(prevState.sparks);
+    setSanityVials(prevState.sanityVials);
+    
+    // If we undo a win, make sure we go back to playing
+    if (prevState.gameState) setGameState(prevState.gameState);
+
+    // Apply cost to the *restored* sanity
+    setSanity(Math.max(0, prevState.sanity - 5));
+    setMessage("Time flows backward (-5 Sanity).");
+  };
+
+  const getSuitType = (suit) => SUITS[suit].type;
+
+  const isValidTableauMove = (cardToMove, targetCard) => {
+    if (!targetCard) {
+      if (cardToMove.suit === 'MAJOR') return true; 
+      return cardToMove.rank.val === 14; 
+    }
+
+    if (cardToMove.suit === 'MAJOR' && targetCard.suit !== 'MAJOR' && targetCard.rank.val === 14) return true;
+    if (cardToMove.rank.val !== targetCard.rank.val - 1) return false;
+    const sourceType = getSuitType(cardToMove.suit);
+    const targetType = getSuitType(targetCard.suit);
+    if (targetType === 'ether') return true;
+    if (sourceType === 'ether') return true; 
+    return sourceType !== targetType;
+  };
+
+  const isValidFoundationMove = (card, pile) => {
+    if (card.suit !== 'MAJOR' && !foundations[card.suit]) return false; 
+    const targetPile = foundations[card.suit];
+    if (targetPile.length === 0) {
+      return card.rank.val === (card.suit === 'MAJOR' ? 0 : 1);
+    }
+    const topCard = targetPile[targetPile.length - 1];
+    return card.suit === topCard.suit && card.rank.val === topCard.rank.val + 1;
+  };
+
+  // --- Move Execution ---
+
+  const moveCard = (source, dest) => {
+    // Clear hints on move
+    setHintCard(null);
+    saveGameState();
+
+    const newTableau = [...tableau];
+    const newFoundations = { ...foundations };
+    const newTalon = [...talon];
+    let points = 0;
+    let sanityChange = -1;
+    let msg = "";
+    let cardsMoving = [];
+
+    if (source.type === 'talon') {
+      cardsMoving = [newTalon.pop()];
+    } else if (source.type === 'tableau') {
+      const col = newTableau[source.colIndex];
+      cardsMoving = col.splice(source.cardIndex);
+      if (col.length > 0 && !col[col.length - 1].faceUp) {
+        col[col.length - 1].faceUp = true;
+        points += 5;
+        msg = "A secret revealed.";
+      }
+    }
+
+    if (dest.type === 'tableau') {
+       newTableau[dest.colIndex].push(...cardsMoving);
+    } else if (dest.type === 'foundation') {
+       newFoundations[dest.suitKey].push(cardsMoving[0]);
+       
+       // Enhanced scoring logic: Majors give 25 points
+       if (cardsMoving[0].suit === 'MAJOR') {
+         points += 25;
+       } else {
+         points += 15;
+       }
+       
+       // Check for pile completion
+       const pile = newFoundations[dest.suitKey];
+       const isMajor = dest.suitKey === 'MAJOR';
+       const isComplete = isMajor ? pile.length === 22 : pile.length === 14;
+
+       if (isComplete) {
+         if (isMajor) {
+           points += 100;
+           msg = "The Major Arcana is complete! (+100 Essence)";
+           setFoundationEffect({ pile: dest.suitKey, type: 'major' });
+         } else {
+           points += 50;
+           msg = `${SUITS[dest.suitKey].name} restored. (+50 Essence)`;
+           setFoundationEffect({ pile: dest.suitKey, type: 'minor' });
+         }
+       } else {
+         sanityChange = 5;
+         msg = "Order restored.";
+       }
+
+       if (Object.values(newFoundations).reduce((acc, pile) => acc + pile.length, 0) === 78) {
+         setGameState('won');
+         setGameDuration(Date.now() - startTime);
+         generateFortune(newFoundations); // Pass foundations to generate fortune
+       }
+    }
+
+    if (source.type === 'talon') setTalon(newTalon);
+    setTableau(newTableau);
+    setFoundations(newFoundations);
+    setMoves(m => m + 1);
+    setScore(s => s + points);
+    modifySanity(sanityChange, msg);
+    setSelectedCard(null);
+  };
+
+  // --- Feature Logic: Hints & Fortune ---
+
+  const findAnyValidMove = () => {
+    // 1. Check Talon (Always progress)
+    if (talon.length > 0) {
+      const card = talon[talon.length - 1];
+      if (isValidFoundationMove(card, foundations[card.suit])) return { card, type: 'foundation' };
+      for (let i = 0; i < 9; i++) {
+        const col = tableau[i];
+        const topCard = col.length > 0 ? col[col.length - 1] : null;
+        if (isValidTableauMove(card, topCard)) return { card, type: 'tableau' };
+      }
+    }
+
+    // 2. Check Tableau to Foundation (Always progress)
+    for (let c = 0; c < 9; c++) {
+      const col = tableau[c];
+      if (col.length === 0) continue;
+      const topCard = col[col.length - 1];
+      if (isValidFoundationMove(topCard, foundations[topCard.suit])) return { card: topCard, type: 'foundation' };
+    }
+
+    // 3. Check Tableau to Tableau (Productive moves only)
+    for (let c = 0; c < 9; c++) {
+      const col = tableau[c];
+      if (col.length === 0) continue;
+
+      for (let i = 0; i < col.length; i++) {
+        const card = col[i];
+        if (!card.faceUp) continue;
+
+        // FILTER 1: If card below is face up, moving this card laterally is usually useless
+        if (i > 0 && col[i-1].faceUp) continue;
+
+        // Try moving to another column
+        for (let targetColIdx = 0; targetColIdx < 9; targetColIdx++) {
+           if (c === targetColIdx) continue;
+           const targetCol = tableau[targetColIdx];
+           const targetCard = targetCol.length > 0 ? targetCol[targetCol.length - 1] : null;
+            
+           if (isValidTableauMove(card, targetCard)) {
+             // FILTER 2: Don't move base card (King/Major) to another empty column
+             if (i === 0 && targetCol.length === 0) continue;
+
+             return { card, type: 'tableau' };
+           }
+        }
+      }
+    }
+    return null;
+  };
+
+  const handleRevealPath = () => {
+    if (gameState !== 'playing') return;
+    modifySanity(-5); // Cost
+
+    const validMove = findAnyValidMove();
+    
+    if (validMove) {
+      setHintCard(validMove.card);
+      setMessage("The path is illuminated (-5 Sanity).");
+      setTimeout(() => setHintCard(null), 2000);
+    } else {
+      setGameDuration(Date.now() - startTime);
+      setGameState('fortune');
+      generateFortune();
+    }
+  };
+
+  const generateFortune = (winningFoundations = null) => {
+    let visibleCards = [];
+    
+    if (winningFoundations) {
+      // If we won, allow selection from ALL cards in the foundations
+      visibleCards = Object.values(winningFoundations).flat();
+    } else {
+      // If lost, use currently visible cards
+      visibleCards = [
+        ...tableau.flat().filter(c => c.faceUp),
+        ...Object.values(foundations).flat()
+      ];
+    }
+    
+    const shuffled = SHUFFLE(visibleCards);
+    const reading = shuffled.slice(0, 3);
+    const futureCard = reading[2] || { rank: { label: '?' }, suit: 'MAJOR' };
+    
+    // Generate full reading string
+    const fullReading = getFullReading(reading[0], reading[1], futureCard);
+
+    setFortuneData({
+       past: reading[0] || { rank: { label: '?' }, suit: 'MAJOR' },
+       present: reading[1] || { rank: { label: '?' }, suit: 'MAJOR' },
+       future: futureCard,
+       prognostication: fullReading // Use the new full reading
+    });
+    
+    // Only show modal if we didn't just win (win has its own modal logic in JSX)
+    // Actually, we use the same modal, just conditional rendering inside.
+    // So we just set data here.
+    if (!winningFoundations) {
+        setShowFortune(true);
+    }
+  };
+
+  // --- Animation & Interaction ---
+
+  const triggerFly = (srcEl, destEl, card, callback) => {
+    if (!srcEl || !destEl) { callback(); return; }
+    const srcRect = srcEl.getBoundingClientRect();
+    const destRect = destEl.getBoundingClientRect();
+    setFlyingCard({
+      src: { top: srcRect.top, left: srcRect.left, width: srcRect.width, height: srcRect.height },
+      dest: { top: destRect.top, left: destRect.left, width: destRect.width, height: destRect.height },
+      card, callback
+    });
+  };
+
+  // Function to trigger the Wisp Animation for Vial
+  const triggerVialWisp = (callback) => {
+     if (!vialRef.current || !sanityRef.current) {
+        callback();
+        return;
+     }
+     const srcRect = vialRef.current.getBoundingClientRect();
+     const destRect = sanityRef.current.getBoundingClientRect();
+
+     setFlyingWisp({
+        src: { top: srcRect.top, left: srcRect.left, width: 24, height: 24 }, // approximate size
+        dest: { top: destRect.top, left: destRect.left, width: destRect.width, height: destRect.height },
+        callback
+     });
+  };
+
+  useEffect(() => {
+    if (flyingCard) {
+      const timer = setTimeout(() => { flyingCard.callback(); setFlyingCard(null); }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [flyingCard]);
+
+  useEffect(() => {
+    if (flyingWisp) {
+      const timer = setTimeout(() => { flyingWisp.callback(); setFlyingWisp(null); }, 800); // Slower wisp
+      return () => clearTimeout(timer);
+    }
+  }, [flyingWisp]);
+
+  const activateVial = () => {
+     if (sanityVials > 0) {
+        setSanityVials(v => v - 1);
+        setMessage("A vital essence is consumed.");
+        
+        // Trigger visual effect
+        triggerVialWisp(() => {
+           setSanity(s => Math.min(80, s + 20));
+        });
+     }
+  };
+
+  const attemptSmartMove = (card, source, cardEl) => {
+    // 1. Try Foundation
+    const pile = foundations[card.suit];
+    if (isValidFoundationMove(card, pile)) {
+       const destEl = foundationRefs.current[card.suit];
+       triggerFly(cardEl, destEl, card, () => moveCard(source, { type: 'foundation', suitKey: card.suit }));
+       return true;
+    }
+    // 2. Try Tableau
+    for (let i = 0; i < 9; i++) {
+        if (source.type === 'tableau' && source.colIndex === i) continue;
+        const targetCol = tableau[i];
+        const topCard = targetCol.length > 0 ? targetCol[targetCol.length - 1] : null;
+        if (isValidTableauMove(card, topCard)) {
+            const colContainer = tableauRefs.current[i];
+            const destEl = colContainer?.lastElementChild || colContainer;
+            triggerFly(cardEl, destEl, card, () => moveCard(source, { type: 'tableau', colIndex: i }));
+            return true;
+        }
+    }
+    return false;
+  };
+
+  // --- Handlers (Stock, Card Click, Drag) ---
+
+  const handleStockClick = () => {
+    if (gameState !== 'playing') return;
+    setHintCard(null);
+    
+    // Save history before modifying state
+    saveGameState();
+
+    if (stock.length === 0) {
+      if (talon.length === 0) return;
+      const newStock = talon.slice().reverse().map(c => ({...c, faceUp: false}));
+      setStock(newStock);
+      setTalon([]);
+      modifySanity(-15, "The cycle exacts its toll...");
+    } else {
+      const card = { ...stock[stock.length - 1], faceUp: true };
+      const newStock = stock.slice(0, -1);
+      setTalon([...talon, card]);
+      setStock(newStock);
+    }
+    setSelectedCard(null);
+  };
+
+  const handleCardClick = (e, card, source) => {
+    if (gameState !== 'playing') return;
+    setHintCard(null); // Clear hint on interaction
+    if (source.type === 'tableau' && !card.faceUp) return;
+    if (source.type === 'foundation') return;
+
+    let isTopCard = true;
+    if (source.type === 'tableau') {
+       const col = tableau[source.colIndex];
+       if (source.cardIndex !== col.length - 1) isTopCard = false;
+    }
+
+    if (isTopCard) {
+      if (attemptSmartMove(card, source, e.currentTarget)) return;
+    }
+
+    if (!selectedCard) {
+      setSelectedCard({ ...source, card });
+      return;
+    }
+    if (selectedCard.card.id === card.id) {
+      setSelectedCard(null);
+      return;
+    }
+    // Attempt move to clicked destination
+    if (source.type === 'tableau') {
+      const col = tableau[source.colIndex];
+      const topCard = col[col.length - 1];
+      if (card.id === topCard.id) {
+        if (isValidTableauMove(selectedCard.card, topCard)) {
+          moveCard(selectedCard, { type: 'tableau', colIndex: source.colIndex });
+          return;
+        } else {
+           const reason = getInvalidMoveReason(selectedCard.card, topCard);
+           if (reason) setMessage(reason);
+        }
+      }
+      setSelectedCard({ ...source, card });
+    }
+  };
+
+  const handleFoundationClick = (suitKey) => {
+    if (!selectedCard || gameState !== 'playing') return;
+    if (isValidFoundationMove(selectedCard.card, foundations[suitKey])) {
+      moveCard(selectedCard, { type: 'foundation', suitKey });
+    }
+  };
+
+  const handleEmptyColumnClick = (e, colIndex) => {
+    if (!selectedCard || gameState !== 'playing') return;
+    const val = selectedCard.card.rank.val;
+    const suit = selectedCard.card.suit;
+    if ((suit !== 'MAJOR' && val === 14) || suit === 'MAJOR') {
+      moveCard(selectedCard, { type: 'tableau', colIndex });
+    } else {
+      setMessage("Only Kings or Major Arcana can fill empty spaces.");
+    }
+  };
+
+  const handleDragStart = (e, card, source) => {
+    if (!card.faceUp) { e.preventDefault(); return; }
+    setDraggedCard({ card, source });
+    e.dataTransfer.setData('text/plain', JSON.stringify(source));
+    
+    // Custom Drag Image
+    if (source.type === 'tableau') {
+      const colEl = tableauRefs.current[source.colIndex];
+      if (colEl) {
+         const container = document.createElement('div');
+         container.style.position = 'absolute'; container.style.top = '-9999px'; container.style.zIndex = '1000'; container.style.width = '100px';
+         document.body.appendChild(container);
+         const startIndex = source.cardIndex + 1; // +1 for placeholder
+         let baseTop = 0;
+         const startNode = colEl.children[startIndex];
+         if (startNode) baseTop = parseFloat(startNode.style.top) || 0;
+         for (let i = startIndex; i < colEl.children.length; i++) {
+            const clone = colEl.children[i].cloneNode(true);
+            const currentTop = parseFloat(colEl.children[i].style.top) || 0;
+            clone.style.position = 'absolute'; clone.style.top = `${currentTop - baseTop}rem`; clone.style.left = '0'; clone.style.width = '100%';
+            container.appendChild(clone);
+         }
+         e.dataTransfer.setDragImage(container, 40, 40);
+         setTimeout(() => document.body.removeChild(container), 0);
+      }
+    }
+  };
+
+  const handleDrop = (e, target) => {
+    e.preventDefault();
+    if (!draggedCard) return;
+    const { card, source } = draggedCard;
+    let success = false;
+    if (target.type === 'tableau') {
+      const col = tableau[target.colIndex];
+      const topCard = col.length > 0 ? col[col.length - 1] : null;
+      if (isValidTableauMove(card, topCard)) {
+        moveCard(source, { type: 'tableau', colIndex: target.colIndex });
+        success = true;
+      } else {
+         const reason = getInvalidMoveReason(card, topCard);
+         if (reason) setMessage(reason);
+      }
+    } else if (target.type === 'foundation') {
+      const pile = foundations[target.suitKey];
+      if (isValidFoundationMove(card, pile)) {
+        moveCard(source, { type: 'foundation', suitKey: target.suitKey });
+        success = true;
+      }
+    }
+    
+    if (!success && !message.includes("Cannot") && !message.includes("Only Kings")) {
+       setMessage("The cards reject this union.");
+    }
+    setDraggedCard(null);
+  };
+
+  const useDivineSpark = () => {
+    if (sparks <= 0) { setShowShop(true); return; }
+    if (stock.length === 0) { setMessage("The stock is empty."); return; }
+    setShowStockPicker(true);
+  };
+
+  const handleDivinePick = (idx) => {
+     saveGameState(); // Save state before consuming spark
+     const pickedCard = stock[idx];
+     const newStock = [...stock];
+     newStock.splice(idx, 1);
+     setStock(newStock);
+     setTalon([...talon, { ...pickedCard, faceUp: true }]);
+     setSparks(s => s - 1);
+     setShowStockPicker(false);
+  };
+
+  // Shop Purchases
+  const buySpark = (cost, amount) => {
+    if (score >= cost) {
+       setScore(s => s - cost);
+       setSparks(s => s + amount);
+       setMessage("The bargain is struck.");
+    } else {
+       setMessage("You lack the Essence for this trade.");
+    }
+  };
+  
+  // Real Money / IAP Purchase Mock
+  const purchaseVials = (amount) => {
+    setSanityVials(v => v + amount);
+    setMessage("Vitality added to your inventory.");
+    setShowShop(false);
+  };
+  
+  // Handle Shop Close & Game Over logic
+  const handleShopClose = () => {
+    setShowShop(false);
+    // If sanity is still <= 0 after closing shop, trigger Game Over
+    if (sanity <= 0) {
+      setGameDuration(Date.now() - startTime);
+      setGameState('fortune');
+      generateFortune();
+    }
+  };
+
+  const getInvalidMoveReason = (card, targetCard) => {
+     if (!targetCard) {
+        if (card.suit === 'MAJOR') return null;
+        if (card.suit !== 'MAJOR' && card.rank.val !== 14) return "Only Kings or Major Arcana can fill empty columns.";
+        return null;
+     }
+     if (card.suit === 'MAJOR' && targetCard.suit !== 'MAJOR' && targetCard.rank.val === 14) return null;
+     if (card.rank.val !== targetCard.rank.val - 1) return "Cards must be placed in descending order."; 
+
+     const sType = SUITS[card.suit].type;
+     const tType = SUITS[targetCard.suit].type;
+     if (sType === 'ether' || tType === 'ether') return null;
+     if (sType === tType) {
+        const name = sType === 'active' ? 'Active (Wands/Swords)' : 'Passive (Cups/Pentacles)';
+        return `Cannot merge two ${name} forces.`;
+     }
+     return null;
+  };
+  
+  return (
+    <div className={`
+       min-h-screen bg-[#050814] text-[#E6DBC4] font-serif selection:bg-[#D4AF37]/30 flex flex-col transition-colors duration-1000
+       ${sanity < 30 ? 'sepia-[.3] contrast-125' : ''}
+    `}>
+      {/* Header */}
+      <header className="bg-[#0A1226] border-b border-[#D4AF37]/20 p-3 sticky top-0 z-40 shadow-xl">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-2">
+          {/* Title */}
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="p-2 bg-gradient-to-br from-[#1e293b] to-[#0F172A] rounded-lg shadow-lg border border-[#D4AF37]/30 relative overflow-hidden">
+               <Crown className="text-[#D4AF37] w-5 h-5 relative z-10" />
+            </div>
+            <div>
+              <h1 className="font-serif font-bold text-lg tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-[#E6DBC4] to-[#D4AF37]">ARCANA SOLITAIRE</h1>
+              <p className="text-[10px] text-[#C5A059] uppercase tracking-widest">{message}</p>
+            </div>
+          </div>
+          {/* Stats */}
+          <div className="flex items-center gap-4 text-xs sm:text-sm w-full md:w-auto justify-between md:justify-end bg-[#020617]/40 p-2 md:p-0 rounded-lg">
+             <div className="flex items-center gap-2 group relative cursor-help" title="Sanity" ref={sanityRef}>
+               <HeadProfile size={16} className={`${sanity < 30 ? 'text-red-500 animate-bounce' : 'text-purple-400'}`} />
+               <div className="w-24 h-2 bg-[#1e293b] rounded-full overflow-hidden border border-[#D4AF37]/20">
+                  <div className={`h-full transition-all duration-500 ${sanity < 30 ? 'bg-red-900' : 'bg-[#C5A059]'}`} style={{ width: `${sanity}%` }} />
+               </div>
+               <GameTooltip title="Sanity" lore="The mind is a fragile vessel..." mechanics="Decreases with moves. Game over at 0. Restore via Foundations." />
+             </div>
+             
+             {/* Vial Inventory */}
+             <div className="flex items-center gap-1 group relative" ref={vialRef}>
+                <div className={`flex items-center gap-1 px-3 py-1 rounded-full border border-cyan-500/30 bg-cyan-900/20 text-cyan-200`}>
+                   <FlaskConical size={14} className="fill-current text-cyan-400" />
+                   <span className="font-serif">{sanityVials}</span>
+                </div>
+                <GameTooltip title="Sanity Vials" lore="Bottled essence of clarity." mechanics="Automatically consumed when Sanity drops below 20. Restores 20 Sanity." />
+             </div>
+
+             <div className="flex items-center gap-1 group relative">
+                <button onClick={useDivineSpark} disabled={stock.length === 0 && sparks > 0} className={`flex items-center gap-1 px-3 py-1 rounded-full border transition-all ${sparks > 0 ? 'border-rose-500/50 bg-rose-900/20 text-rose-200 hover:scale-105' : 'border-slate-800 bg-slate-900 text-slate-600 cursor-not-allowed'}`}>
+                  <Flame size={14} className={sparks > 0 ? 'fill-current animate-pulse text-rose-400' : ''} />
+                  <span className="font-serif">{sparks}</span>
+                </button>
+                <button onClick={() => setShowShop(true)} className="p-1 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors"><Plus size={12} /></button>
+                <GameTooltip title="Divine Spark" lore="Reveal the unseen." mechanics="Reveals Stock. Pick one to move to Talon." position="left-1/2 -translate-x-1/2" />
+             </div>
+             <div className="flex flex-col items-end min-w-[3rem] group relative cursor-help">
+               <span className="text-[#94A3B8] text-[8px] uppercase tracking-wider">Essence</span>
+               <span className="font-serif text-emerald-400">{score}</span>
+               <GameTooltip title="Essence" lore="The currency of ascension." mechanics="Score. Spend in Shop for Sparks." position="right-0" />
+             </div>
+             <div className="h-6 w-px bg-[#D4AF37]/20 mx-1"></div>
+             {/* Shop / Mercantile Button */}
+             <button onClick={() => setShowShop(true)} className="p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="The Emporium">
+               <ShoppingBag size={18} />
+               <GameTooltip title="The Emporium" lore="Mystical wares for the weary traveler." mechanics="Purchase Sanity and Divine Sparks." position="right-0" />
+             </button>
+
+             {/* Reveal Path / Hint Button */}
+             <button onClick={handleRevealPath} className="p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="Reveal Path">
+               <Eye size={18} />
+               <GameTooltip title="Reveal Path" lore="The eye sees what the mind misses." mechanics="Highlights a valid move (Costs 5 Sanity). If none exist, your Fate is Sealed." position="right-0" />
+             </button>
+
+             {/* Undo Button */}
+             <button onClick={handleUndo} disabled={history.length === 0} className={`p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group ${history.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`} title="Undo Move">
+               <Undo2 size={18} />
+               <GameTooltip title="Reverse Time" lore="Turn back the clock." mechanics="Undo last move. Costs 5 Sanity." position="right-0" />
+             </button>
+
+             <button onClick={startNewGame} className="p-2 hover:bg-[#D4AF37]/10 rounded-full text-red-400/80 hover:text-red-400 transition-colors" title="New Game"><RotateCcw size={18} /></button>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 p-2 sm:p-4 lg:p-6 overflow-x-hidden w-full max-w-7xl mx-auto relative">
+         {/* Top Section */}
+         <div className="grid grid-cols-9 gap-0.5 sm:gap-1 mb-6">
+            <div className="col-span-1 flex justify-center">
+               <div onClick={handleStockClick} className="relative group">
+                 {stock.length > 0 ? (
+                   <><div className="absolute top-0.5 left-0.5 w-full h-full bg-[#E6DBC4]/5 rounded-md"></div><Card faceUp={false} /><div className="absolute bottom-[-20px] left-0 w-full text-center text-xs text-[#94A3B8] font-serif">{stock.length}</div></>
+                 ) : <div className="w-10 sm:w-14 md:w-20 lg:w-28 aspect-[420/720] border-2 border-dashed border-[#D4AF37]/30 rounded-md flex items-center justify-center cursor-pointer hover:bg-[#D4AF37]/5"><RefreshCw className="text-[#D4AF37]/50" size={20} /></div>}
+               </div>
+            </div>
+            <div className="col-span-1 flex justify-center">
+               <div className="relative">
+                 {talon.length > 0 ? (
+                   <Card card={talon[talon.length - 1]} faceUp={true} isSelected={selectedCard?.card?.id === talon[talon.length - 1].id} isHint={hintCard?.id === talon[talon.length - 1].id} onClick={(e) => handleCardClick(e, talon[talon.length - 1], { type: 'talon' })} onDragStart={(e) => handleDragStart(e, talon[talon.length - 1], { type: 'talon' })} sanityLow={sanity < 30} />
+                 ) : <div className="w-10 sm:w-14 md:w-20 lg:w-28 aspect-[420/720] border border-[#D4AF37]/20 rounded-md bg-[#020617]/30" />}
+               </div>
+            </div>
+            <div className="col-span-2"></div>
+            {['MAJOR', 'WANDS', 'CUPS', 'SWORDS', 'PENTACLES'].map(suitKey => {
+              const pile = foundations[suitKey];
+              const topCard = pile.length > 0 ? pile[pile.length - 1] : null;
+              const info = SUITS[suitKey];
+              const Icon = info.icon;
+              return (
+                 <div key={suitKey} className="col-span-1 flex justify-center relative">
+                    <div ref={el => foundationRefs.current[suitKey] = el} onClick={() => handleFoundationClick(suitKey)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, { type: 'foundation', suitKey })} className={`relative w-10 sm:w-14 md:w-20 lg:w-28 aspect-[420/720] border border-[#D4AF37]/20 rounded-md flex items-center justify-center cursor-pointer transition-colors bg-[#020617]/30 ${selectedCard && isValidFoundationMove(selectedCard.card, pile) ? 'bg-[#D4AF37]/10 border-[#D4AF37]/50' : ''}`}>
+                        {topCard ? <Card card={topCard} faceUp={true} style={{position:'absolute', top:0, left:0}} sanityLow={sanity < 30} /> : <Icon className={`${info.color} opacity-20`} size={24} />}
+                    </div>
+                    {/* Completion Effect Overlay */}
+                    {foundationEffect && foundationEffect.pile === suitKey && (
+                      <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-50">
+                         {foundationEffect.type === 'major' ? (
+                           <>
+                             <div className="absolute animate-ping opacity-75 rounded-full bg-purple-500 w-full h-full"></div>
+                             <Sparkles className="w-12 h-12 text-amber-400 animate-spin-slow drop-shadow-[0_0_15px_rgba(251,191,36,1)]" />
+                           </>
+                         ) : (
+                           <Sparkles className="w-8 h-8 text-emerald-400 animate-bounce drop-shadow-[0_0_10px_rgba(52,211,153,0.8)]" />
+                         )}
+                      </div>
+                    )}
+                 </div>
+              );
+            })}
+         </div>
+
+         {/* Tableau */}
+         <div className="grid grid-cols-9 gap-0.5 sm:gap-1 min-h-[50vh]">
+            {tableau.map((col, colIdx) => (
+              <div key={colIdx} ref={el => tableauRefs.current[colIdx] = el} className="relative flex flex-col items-center h-full" onClick={(e) => col.length === 0 && handleEmptyColumnClick(e, colIdx)} onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, { type: 'tableau', colIndex: colIdx })}>
+                 <div className={`absolute top-0 w-10 sm:w-14 md:w-20 lg:w-28 aspect-[420/720] rounded-md border border-[#D4AF37]/10 bg-[#E6DBC4]/[0.02] ${col.length === 0 ? 'opacity-100' : 'opacity-0'}`} />
+                 {col.map((card, cardIdx) => (
+                   <div key={card.id} className="absolute w-full flex justify-center transition-all" style={{ top: `${cardIdx * (window.innerWidth < 640 ? 1.5 : 2.0)}rem`, zIndex: cardIdx }}>
+                     <Card card={card} faceUp={card.faceUp} isSelected={selectedCard?.card?.id === card.id} isHint={hintCard?.id === card.id} onClick={(e) => { e.stopPropagation(); handleCardClick(e, card, { type: 'tableau', colIndex: colIdx, cardIndex: cardIdx }); }} onDragStart={(e) => handleDragStart(e, card, { type: 'tableau', colIndex: colIdx, cardIndex: cardIdx })} sanityLow={sanity < 30} />
+                   </div>
+                 ))}
+              </div>
+            ))}
+         </div>
+
+         {/* Animation Layer */}
+         {flyingCard && (
+           <>
+             <style>{`@keyframes flyCard { 0% { top: ${flyingCard.src.top}px; left: ${flyingCard.src.left}px; transform: scale(1) rotate(0deg); } 50% { transform: scale(1.1) rotate(180deg); z-index: 1000; } 100% { top: ${flyingCard.dest.top}px; left: ${flyingCard.dest.left}px; transform: scale(1) rotate(360deg); } }`}</style>
+             <div className="fixed z-[100] pointer-events-none" style={{ width: flyingCard.src.width, height: flyingCard.src.height, animation: 'flyCard 0.5s ease-in-out forwards' }}><Card card={flyingCard.card} faceUp={true} /></div>
+           </>
+         )}
+         
+         {/* Wisp Animation for Vial */}
+         {flyingWisp && (
+           <>
+             <style>{`@keyframes flyWisp { 0% { top: ${flyingWisp.src.top}px; left: ${flyingWisp.src.left}px; opacity: 1; transform: scale(1); } 100% { top: ${flyingWisp.dest.top}px; left: ${flyingWisp.dest.left}px; opacity: 0; transform: scale(2); } }`}</style>
+             <div className="fixed z-[100] pointer-events-none text-cyan-400 filter drop-shadow-[0_0_15px_rgba(34,211,238,0.8)]" style={{ width: flyingWisp.src.width, height: flyingWisp.src.height, animation: 'flyWisp 0.8s ease-in-out forwards' }}>
+               <Sparkles size={32} className="animate-pulse" />
+             </div>
+           </>
+         )}
+      </main>
+
+      {/* Stock Picker Modal */}
+      {showStockPicker && (
+        <div className="fixed inset-0 z-[60] bg-[#020617]/95 backdrop-blur-md p-6 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
+           <h3 className="text-2xl font-serif text-[#D4AF37] mb-2">Clairvoyance</h3>
+           <div className="grid grid-cols-4 sm:grid-cols-6 gap-4 overflow-y-auto max-h-[60vh] p-4 w-full max-w-4xl">
+              {stock.map((card, idx) => (
+                <div key={card.id} className="flex justify-center group" onClick={() => handleDivinePick(idx)}>
+                   <div className="transform transition-transform hover:scale-110 hover:-translate-y-2 cursor-pointer"><Card card={card} faceUp={true} /></div>
+                </div>
+              ))}
+           </div>
+           <button onClick={() => setShowStockPicker(false)} className="mt-8 px-6 py-2 border border-[#D4AF37]/30 text-[#E6DBC4] rounded-full hover:bg-[#D4AF37]/10 transition-colors">Close</button>
+        </div>
+      )}
+
+      {/* Shop Modal */}
+      {showShop && <div className="fixed inset-0 z-[60] bg-[#020617]/95 backdrop-blur-lg flex items-center justify-center p-4 animate-in fade-in duration-300"><div className="bg-[#050A19] border border-[#D4AF37]/40 rounded-xl p-8 max-w-lg w-full relative"><button onClick={handleShopClose} className="absolute top-4 right-4 text-[#94A3B8] hover:text-[#E6DBC4]"><X size={24} /></button><div className="flex flex-col items-center text-center mb-8"><div className="p-4 bg-[#D4AF37]/10 rounded-full mb-4 ring-1 ring-[#D4AF37]/40"><ShoppingBag className="w-8 h-8 text-[#D4AF37]" /></div><h2 className="text-3xl font-serif text-[#E6DBC4]">The Emporium</h2><p className="text-[#94A3B8] text-sm mt-2">Mystical wares for the weary traveler.</p>{sanity <= 0 && <p className="text-red-400 text-xs font-bold mt-2 animate-pulse uppercase tracking-wider">Sanity Depleted - Restore or Perish</p>}</div><div className="space-y-4"><div className="space-y-2"><h3 className="text-xs text-[#94A3B8] uppercase tracking-widest font-bold">Vitality (In-App Purchase)</h3><div className={`flex items-center justify-between p-4 bg-gradient-to-r from-[#0F172A] to-[#1e293b] rounded-lg border border-[#D4AF37]/30 hover:border-[#D4AF37]/60 transition-colors group`}><div className="flex items-center gap-3"><div className="relative"><HeadProfile className="text-[#D4AF37]" size={24} /><div className="absolute -top-1 -right-1 bg-[#C5A059] text-black text-[8px] px-1 rounded-full font-bold">5x</div></div><div className="text-left"><div className="text-[#E6DBC4] font-bold group-hover:text-[#D4AF37] transition-colors">Bundle of 5 Vials</div><div className="text-xs text-[#94A3B8]">Adds 5 Vials to Inventory</div></div></div><button onClick={() => purchaseVials(5)} className={`px-5 py-2 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] hover:from-[#C5A059] hover:to-[#DAA520] text-[#050A19] text-sm font-bold rounded-full transition-all shadow-lg shadow-[#D4AF37]/20`}>$0.99</button></div><div className={`flex items-center justify-between p-4 bg-[#E6DBC4]/5 rounded-lg border border-[#E6DBC4]/5 hover:border-[#D4AF37]/20 transition-colors`}><div className="flex items-center gap-3"><HeadProfile className="text-[#D4AF37]/70" size={20} /><div className="text-left"><div className="text-[#E6DBC4] font-bold">Single Vial</div><div className="text-xs text-[#94A3B8]">Adds 1 Vial to Inventory</div></div></div><button onClick={() => purchaseVials(1)} className={`px-4 py-1.5 bg-[#1e293b] hover:bg-[#334155] text-[#E6DBC4] text-sm font-bold rounded-full transition-colors`}>$0.25</button></div></div><div className="pt-4 border-t border-[#D4AF37]/20 space-y-2"><h3 className="text-xs text-[#94A3B8] uppercase tracking-widest font-bold">Essence Exchange</h3><div className="flex items-center justify-between p-4 bg-[#E6DBC4]/5 rounded-lg border border-[#E6DBC4]/5 hover:border-[#D4AF37]/30 transition-colors"><div className="flex items-center gap-3"><Flame className="text-[#D4AF37]" size={20} /><div className="text-left"><div className="text-[#E6DBC4] font-bold">Divine Spark</div><div className="text-xs text-[#94A3B8]">Reveal & Pick from Stock</div></div></div><button onClick={() => buySpark(500, 1)} className="px-4 py-1.5 bg-[#1e293b] hover:bg-[#334155] text-[#E6DBC4] text-sm font-bold rounded-full transition-colors flex items-center gap-1">500 <span className="text-[10px] uppercase opacity-70">Ess</span></button></div></div></div><div className="mt-6 pt-6 border-t border-[#D4AF37]/20 flex justify-between items-center text-sm"><span className="text-[#94A3B8]">Your Essence:</span><span className="font-serif text-[#10B981] text-lg flex items-center gap-1"><Gem size={14} />{score}</span></div></div></div>}
+
+      {/* Fortune / Game Over Modal */}
+      {(gameState === 'won' || gameState === 'lost' || gameState === 'fortune') && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#020617]/95 backdrop-blur-md p-4 animate-in fade-in duration-1000">
+           <div className="text-center max-w-3xl w-full">
+              {gameState === 'won' ? (
+                 <>
+                   <Trophy className="w-16 h-16 text-[#D4AF37] mx-auto mb-4" />
+                   <h2 className="text-4xl font-serif text-[#E6DBC4] mb-2">Ascension</h2>
+                   <p className="text-[#94A3B8] mb-8">The ritual is complete.</p>
+                    
+                   <div className="grid grid-cols-4 gap-6 mb-8 text-center bg-[#050A19] p-6 rounded-xl border border-[#D4AF37]/30">
+                      <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Time</div><div className="text-2xl font-serif text-[#E6DBC4]">{formatTime(gameDuration)}</div></div>
+                      <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Moves</div><div className="text-2xl font-serif text-[#E6DBC4]">{moves}</div></div>
+                      <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Essence</div><div className="text-2xl font-serif text-[#10B981]">{score}</div></div>
+                      <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Sparks</div><div className="text-2xl font-serif text-[#D4AF37]">{sparks}</div></div>
+                   </div>
+
+                   {fortuneData && (
+                      <div className="grid grid-cols-3 gap-4 mb-8">
+                         {[fortuneData.past, fortuneData.present, fortuneData.future].map((card, i) => (
+                           <div key={i} className="flex flex-col items-center animate-in slide-in-from-bottom duration-700" style={{ animationDelay: `${i * 200}ms` }}>
+                              <span className="text-xs text-[#D4AF37] uppercase tracking-widest mb-2">{['Past', 'Present', 'Future'][i]}</span>
+                              <div className="mb-2"><Card card={card} faceUp={true} /></div>
+                              <h5 className="text-[#E6DBC4] font-serif text-sm font-bold mt-2 text-center">{getCardFullName(card)}</h5>
+                              <p className="text-[10px] text-[#94A3B8] mt-1 max-w-[150px] leading-tight px-2 text-center">{getCardMeaning(card)}</p>
+                           </div>
+                         ))}
+                      </div>
+                    )}
+                    {/* Added Fortune Text Display for Win State */}
+                    {fortuneData && (
+                      <div className="mt-4 mb-6 p-3 bg-[#050A19] rounded-xl border border-[#D4AF37]/20">
+                        <p className="text-[#E6DBC4] font-serif text-lg italic leading-relaxed">
+                          "{fortuneData.prognostication}"
+                        </p>
+                      </div>
+                    )}
+                 </>
+              ) : gameState === 'fortune' ? (
+                 <>
+                    <div className="mb-4"><div className="inline-flex p-4 rounded-full border border-[#D4AF37]/50 bg-[#D4AF37]/10"><Eye className="w-8 h-8 text-[#D4AF37]" /></div></div>
+                    <h2 className="text-2xl md:text-4xl font-serif font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#E6DBC4] via-[#D4AF37] to-[#E6DBC4] mb-1">The Threads Have Tightened</h2>
+                    <p className="text-[#94A3B8] text-sm mb-4 italic">"No further moves exist in this timeline. But the cards still speak..."</p>
+                    
+                    {fortuneData && (
+                      <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4">
+                         {[fortuneData.past, fortuneData.present, fortuneData.future].map((card, i) => (
+                           <div key={i} className="flex flex-col items-center animate-in slide-in-from-bottom duration-700" style={{ animationDelay: `${i * 200}ms` }}>
+                              <span className="text-xs text-[#D4AF37] uppercase tracking-widest mb-2">{['Past', 'Present', 'Future'][i]}</span>
+                              <div className="mb-2"><Card card={card} faceUp={true} /></div>
+                              <h5 className="text-[#E6DBC4] font-serif text-sm font-bold mt-2 text-center">{getCardFullName(card)}</h5>
+                              <p className="text-[10px] text-[#94A3B8] mt-1 max-w-[150px] leading-tight px-2 text-center">{getCardMeaning(card)}</p>
+                           </div>
+                         ))}
+                      </div>
+                    )}
+                    {fortuneData && (
+                      <div className="mt-4 mb-6 p-3 bg-[#050A19] rounded-xl border border-[#D4AF37]/20">
+                        <p className="text-[#E6DBC4] font-serif text-lg italic leading-relaxed">
+                          "{fortuneData.prognostication}"
+                        </p>
+                      </div>
+                    )}
+                    {/* Add Stats for Fail State (Fortune) */}
+                    <div className="grid grid-cols-3 gap-4 mb-6 text-center bg-[#050A19] p-4 rounded-xl border border-[#D4AF37]/30">
+                      <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Time</div><div className="text-xl font-serif text-[#E6DBC4]">{formatTime(gameDuration)}</div></div>
+                      <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Moves</div><div className="text-xl font-serif text-[#E6DBC4]">{moves}</div></div>
+                      <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Essence</div><div className="text-xl font-serif text-[#10B981]">{score}</div></div>
+                    </div>
+                 </>
+              ) : (
+                 <>
+                    <Skull className="w-16 h-16 text-red-700 mx-auto mb-4" />
+                    <h2 className="text-4xl text-red-600 font-serif mb-4">The Void Consumes</h2>
+                    {/* Add Stats for Fail State (Void) - just in case it's reachable */}
+                    <div className="grid grid-cols-3 gap-4 mb-6 text-center bg-[#050A19] p-4 rounded-xl border border-red-900/30">
+                      <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Time</div><div className="text-xl font-serif text-[#E6DBC4]">{formatTime(gameDuration)}</div></div>
+                      <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Moves</div><div className="text-xl font-serif text-[#E6DBC4]">{moves}</div></div>
+                      <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Essence</div><div className="text-xl font-serif text-[#10B981]">{score}</div></div>
+                    </div>
+                 </>
+              )}
+              <button onClick={startNewGame} className="px-8 py-3 bg-[#E6DBC4] text-[#050A19] font-bold rounded-full hover:scale-105 transition-transform shadow-[0_0_20px_rgba(230,219,196,0.3)]">Begin New Journey</button>
+           </div>
+        </div>
+      )}
+      
+      {/* Jiggle Animation Style */}
+      <style>{`
+        @keyframes jiggle {
+          0%, 100% { transform: rotate(-2deg); }
+          50% { transform: rotate(2deg); }
+        }
+        .animate-jiggle { animation: jiggle 0.3s ease-in-out infinite; }
+        .animate-spin-slow { animation: spin 8s linear infinite; }
+        @keyframes spin { 
+          from { transform: rotate(0deg); } 
+          to { transform: rotate(360deg); } 
+        }
+      `}</style>
+    </div>
+  );
+}
