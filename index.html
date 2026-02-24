@@ -25,14 +25,13 @@
 <body class="bg-[#050814]">
     <div id="root"></div>
 
-    <!-- ADDED data-presets="react" so Babel doesn't break our imports -->
     <script type="text/babel" data-type="module" data-presets="react">
         import React, { useState, useEffect, useRef, memo } from 'react';
         import { createRoot } from 'react-dom/client';
         import { 
           RefreshCw, RotateCcw, HelpCircle, Trophy, Sparkles, 
           Sword, Wine, Coins, Club, Crown, Save, Download, 
-          Flame, Skull, Plus, ShoppingBag, X, Eye, Clock, Gem, FlaskConical, Undo2
+          Flame, Skull, Plus, ShoppingBag, X, Eye, Clock, Gem, FlaskConical, Undo2, BookOpen
         } from 'lucide-react';
 
         // --- Assets Configuration ---
@@ -74,32 +73,70 @@
           return `${rankName} of ${SUITS[card.suit].name}`;
         };
 
-        const getCardMeaning = (card) => {
-            if (card.suit === 'MAJOR') return "A major force of destiny.";
-            if (card.suit === 'WANDS') return "Energy, inspiration, and fire.";
-            if (card.suit === 'CUPS') return "Emotion, relationship, and water.";
-            if (card.suit === 'SWORDS') return "Intellect, conflict, and air.";
-            if (card.suit === 'PENTACLES') return "Possessions, practicality, and earth.";
-            return "A minor influence on your path.";
+        // Tarot Meanings Engine
+        const MAJOR_MEANINGS = [
+          "a leap of faith into the unknown", // 0
+          "the manifestation of your willpower", // 1
+          "trusting your deepest intuition", // 2
+          "nurturing abundance and creation", // 3
+          "establishing structure and authority", // 4
+          "seeking traditional wisdom and beliefs", // 5
+          "a powerful choice of alignment and values", // 6
+          "overcoming obstacles through sheer determination", // 7
+          "quiet endurance and inner compassion", // 8
+          "a period of soul-searching and inner guidance", // 9
+          "the inevitable turning of fate and karma", // 10
+          "seeking truth and karmic balance", // 11
+          "surrendering to gain a new perspective", // 12
+          "the necessary end of an era to allow rebirth", // 13
+          "finding synthesis and patience in moderation", // 14
+          "confronting shadow selves and unhealthy attachments", // 15
+          "a sudden upheaval that dismantles false structures", // 16
+          "renewed hope and spiritual healing", // 17
+          "navigating illusions and subconscious anxieties", // 18
+          "basking in success, joy, and vitality", // 19
+          "a profound awakening and reckoning of past actions", // 20
+          "the triumphant completion of a major life cycle" // 21
+        ];
+
+        const SUIT_THEMES = {
+          WANDS: "passion and action",
+          CUPS: "emotion and connection",
+          SWORDS: "intellect and conflict",
+          PENTACLES: "material wealth and foundation"
         };
 
-        const getFullReading = (past, present, future) => {
-           if (!past || !present || !future) return "The mists are thick. Tread carefully.";
-           
-           const getTheme = (card) => {
-             if (card.suit === 'MAJOR') return "profound transformation";
-             if (card.suit === 'WANDS') return "fiery ambition";
-             if (card.suit === 'CUPS') return "deep emotion";
-             if (card.suit === 'SWORDS') return "sharp truth";
-             if (card.suit === 'PENTACLES') return "worldly foundation";
-             return "mystery";
-           };
+        const RANK_THEMES = {
+          1: "a new spark of",
+          2: "balancing",
+          3: "collaborating in",
+          4: "finding stability in",
+          5: "struggling with",
+          6: "finding harmony in",
+          7: "defending your",
+          8: "dedication to",
+          9: "the culmination of",
+          10: "the absolute limit of",
+          11: "exploring",
+          12: "charging forward with",
+          13: "mastering",
+          14: "ruling over"
+        };
 
-           const pTheme = getTheme(past);
-           const prTheme = getTheme(present);
-           const fTheme = getTheme(future);
+        const getSpecificFortune = (card, position) => {
+          if (!card) return "The mists obscure this path.";
+          let meaning = "";
+          
+          if (card.suit === 'MAJOR') {
+            meaning = MAJOR_MEANINGS[card.rank.val];
+          } else {
+            meaning = `${RANK_THEMES[card.rank.val]} ${SUIT_THEMES[card.suit]}`;
+          }
 
-           return `You have risen from a past of ${pTheme}, navigating a present shaped by ${prTheme}. The cards foretell a destiny of ${fTheme}.`;
+          if (position === 'past') return `Your past was defined by ${meaning}.`;
+          if (position === 'present') return `Currently, you find yourself experiencing ${meaning}.`;
+          if (position === 'future') return `Your future path is marked by ${meaning}.`;
+          return meaning;
         };
 
         const formatTime = (ms) => {
@@ -173,14 +210,16 @@
           </div>
         );
 
-        const Card = memo(({ card, faceUp, onClick, onDoubleClick, onDragStart, isSelected, isHint, style = {}, sanityLow }) => {
+        const Card = memo(({ card, faceUp, onClick, onDoubleClick, onDragStart, isSelected, isHint, style = {}, sanityLow, fullWidth = false }) => {
           const [imgError, setImgError] = useState(false);
           const [currentExt, setCurrentExt] = useState('jpg');
-          const sizeClasses = "w-10 sm:w-14 md:w-20 lg:w-28 aspect-[420/720]";
+          
+          // Use full width for the modal, standard responsive sizes for board
+          const sizeClasses = fullWidth ? "w-full aspect-[420/720]" : "w-10 sm:w-14 md:w-20 lg:w-28 aspect-[420/720]";
 
           useEffect(() => { setImgError(false); setCurrentExt('jpg'); }, [card]);
 
-          if (!card) return <div className={`${sizeClasses} border-2 border-dashed border-[#D4AF37]/20 rounded-md bg-[#050A19]/50`} />;
+          if (!card) return <div className={`${sizeClasses} border-2 border-dashed border-[#D4AF37]/20 rounded-md bg-[#050A19]/50 flex items-center justify-center`}><span className="text-[#D4AF37]/30 text-xs font-serif italic">Empty</span></div>;
 
           const parchmentColor = "border-[#E4D4B5]";
           const parchmentBg = "bg-[#E4D4B5]";
@@ -239,22 +278,28 @@
           const [talon, setTalon] = useState([]);
           const [selectedCard, setSelectedCard] = useState(null);
           
-          const [history, setHistory] = useState([]);
-          const [foundationEffect, setFoundationEffect] = useState(null);
+          const [history, setHistory] = useState([]); 
+          const [foundationEffect, setFoundationEffect] = useState(null); 
 
           const [moves, setMoves] = useState(0);
+          const [tableauPlacements, setTableauPlacements] = useState(0);
           const [score, setScore] = useState(0);
-          const [sanity, setSanity] = useState(80);
+          const [sanity, setSanity] = useState(80); 
           const [sparks, setSparks] = useState(3);
-          const [sanityVials, setSanityVials] = useState(0);
+          const [sanityVials, setSanityVials] = useState(0); 
           const [startTime, setStartTime] = useState(null);
           const [gameDuration, setGameDuration] = useState(0);
           const [message, setMessage] = useState("Begin the ritual...");
 
+          // Modal States
+          const [showGrimoire, setShowGrimoire] = useState(false);
           const [showStockPicker, setShowStockPicker] = useState(false);
           const [showShop, setShowShop] = useState(false);
           const [showFortune, setShowFortune] = useState(false);
+          const [showReadingTracker, setShowReadingTracker] = useState(false);
+          
           const [fortuneData, setFortuneData] = useState(null);
+          const [readingState, setReadingState] = useState({ past: null, present: null, future: null });
 
           const foundationRefs = useRef({});
           const tableauRefs = useRef([]);
@@ -262,12 +307,18 @@
           const sanityRef = useRef(null);
           
           const [flyingCard, setFlyingCard] = useState(null);
-          const [flyingWisp, setFlyingWisp] = useState(null);
+          const [flyingWisp, setFlyingWisp] = useState(null); 
           const [hintCard, setHintCard] = useState(null);
           const [draggedCard, setDraggedCard] = useState(null);
 
           const initGame = () => {
+            const hasSeenGrimoire = localStorage.getItem('arcanaGrimoireSeen');
             const savedState = localStorage.getItem('tarotSolitaireSave');
+            
+            if (!hasSeenGrimoire) {
+               setShowGrimoire(true);
+            }
+
             if (savedState) {
               try {
                 const parsed = JSON.parse(savedState);
@@ -276,20 +327,22 @@
                 setStock(parsed.stock);
                 setTalon(parsed.talon);
                 setMoves(parsed.moves);
+                setTableauPlacements(parsed.tableauPlacements || 0);
                 setScore(parsed.score);
                 setSanity(parsed.sanity || 80);
                 setSparks(parsed.sparks || 3);
                 setSanityVials(parsed.sanityVials || 0);
                 setHistory(parsed.history || []);
+                setReadingState(parsed.readingState || { past: null, present: null, future: null });
                 setGameState('playing');
                 setStartTime(Date.now()); 
                 return;
               } catch (e) {}
             }
-            startNewGame();
+            startNewGame(hasSeenGrimoire);
           };
 
-          const startNewGame = () => {
+          const startNewGame = (hasSeenGrimoire = true) => {
             setGameState('loading');
             let newDeck = [];
             ['WANDS', 'CUPS', 'SWORDS', 'PENTACLES'].forEach(suit => {
@@ -314,17 +367,22 @@
             setTableau(newTableau);
             setFoundations({ MAJOR: [], WANDS: [], CUPS: [], SWORDS: [], PENTACLES: [] });
             setMoves(0);
+            setTableauPlacements(0);
             setScore(0);
             setSanity(80);
             setSparks(3);
             setSanityVials(0);
             setHistory([]);
+            setReadingState({ past: null, present: null, future: null });
             setStartTime(Date.now());
             setGameDuration(0);
             setMessage("The veil is thin.");
             setSelectedCard(null);
             setHintCard(null);
             setShowFortune(false);
+            
+            // If they haven't seen the grimoire, it will be open. Reading tracker will sit underneath.
+            setShowReadingTracker(true); 
             setGameState('playing');
             localStorage.removeItem('tarotSolitaireSave');
           };
@@ -350,10 +408,12 @@
 
           useEffect(() => {
             if (gameState === 'playing') {
-              const stateToSave = { tableau, foundations, stock, talon, moves, score, sanity, sparks, sanityVials, history };
+              const stateToSave = { 
+                tableau, foundations, stock, talon, moves, score, sanity, sparks, sanityVials, history, readingState, tableauPlacements 
+              };
               localStorage.setItem('tarotSolitaireSave', JSON.stringify(stateToSave));
             }
-          }, [tableau, foundations, stock, talon, moves, score, sanity, sparks, sanityVials, gameState, history]);
+          }, [tableau, foundations, stock, talon, moves, score, sanity, sparks, sanityVials, gameState, history, readingState, tableauPlacements]);
 
           const modifySanity = (amount, msg) => {
              setSanity(prev => Math.min(80, Math.max(0, prev + amount)));
@@ -364,7 +424,8 @@
             setHistory(prev => [...prev, {
               tableau: JSON.parse(JSON.stringify(tableau)),
               foundations: JSON.parse(JSON.stringify(foundations)),
-              stock: [...stock], talon: [...talon], moves, score, sanity, sparks, sanityVials, gameState
+              stock: [...stock], talon: [...talon], moves, score, sanity, sparks, sanityVials, gameState,
+              readingState: { ...readingState }, tableauPlacements
             }]);
           };
 
@@ -376,9 +437,15 @@
             setTableau(prevState.tableau); setFoundations(prevState.foundations); setStock(prevState.stock);
             setTalon(prevState.talon); setMoves(prevState.moves); setScore(prevState.score);
             setSparks(prevState.sparks); setSanityVials(prevState.sanityVials);
+            setReadingState(prevState.readingState); setTableauPlacements(prevState.tableauPlacements);
             if (prevState.gameState) setGameState(prevState.gameState);
             setSanity(Math.max(0, prevState.sanity - 5));
             setMessage("Time flows backward (-5 Sanity).");
+          };
+
+          const handleCloseGrimoire = () => {
+            setShowGrimoire(false);
+            localStorage.setItem('arcanaGrimoireSeen', 'true');
           };
 
           const getSuitType = (suit) => SUITS[suit].type;
@@ -402,6 +469,9 @@
             setHintCard(null); saveGameState();
             const newTableau = [...tableau], newFoundations = { ...foundations }, newTalon = [...talon];
             let points = 0, sanityChange = -1, msg = "", cardsMoving = [];
+            let newPlacements = tableauPlacements;
+            let newReadingState = { ...readingState };
+            let triggerDraw = false;
 
             if (source.type === 'talon') cardsMoving = [newTalon.pop()];
             else if (source.type === 'tableau') {
@@ -410,7 +480,22 @@
               if (col.length > 0 && !col[col.length - 1].faceUp) { col[col.length - 1].faceUp = true; points += 5; msg = "A secret revealed."; }
             }
 
-            if (dest.type === 'tableau') newTableau[dest.colIndex].push(...cardsMoving);
+            if (dest.type === 'tableau') {
+               newTableau[dest.colIndex].push(...cardsMoving);
+               newPlacements += 1;
+               
+               // Trigger readings based on tableau placements
+               if (newPlacements === 5 && !newReadingState.past) {
+                  newReadingState.past = cardsMoving[0];
+                  triggerDraw = true;
+               } else if (newPlacements === 15 && !newReadingState.present) {
+                  newReadingState.present = cardsMoving[0];
+                  triggerDraw = true;
+               } else if (newPlacements === 25 && !newReadingState.future) {
+                  newReadingState.future = cardsMoving[0];
+                  triggerDraw = true;
+               }
+            }
             else if (dest.type === 'foundation') {
                newFoundations[dest.suitKey].push(cardsMoving[0]);
                points += (cardsMoving[0].suit === 'MAJOR' ? 25 : 15);
@@ -427,9 +512,15 @@
                  setGameState('won'); setGameDuration(Date.now() - startTime); generateFortune(newFoundations);
                }
             }
+
             if (source.type === 'talon') setTalon(newTalon);
             setTableau(newTableau); setFoundations(newFoundations); setMoves(m => m + 1); setScore(s => s + points);
+            setTableauPlacements(newPlacements); setReadingState(newReadingState);
             modifySanity(sanityChange, msg); setSelectedCard(null);
+
+            if (triggerDraw) {
+               setShowReadingTracker(true);
+            }
           };
 
           const findAnyValidMove = () => {
@@ -472,11 +563,18 @@
           };
 
           const generateFortune = (winningFoundations = null) => {
+            let p = readingState.past, pr = readingState.present, f = readingState.future;
             let visibleCards = winningFoundations ? Object.values(winningFoundations).flat() : [...tableau.flat().filter(c => c.faceUp), ...Object.values(foundations).flat()];
             const shuffled = SHUFFLE(visibleCards);
-            const reading = shuffled.slice(0, 3);
-            const futureCard = reading[2] || { rank: { label: '?' }, suit: 'MAJOR' };
-            setFortuneData({ past: reading[0] || { rank: { label: '?' }, suit: 'MAJOR' }, present: reading[1] || { rank: { label: '?' }, suit: 'MAJOR' }, future: futureCard, prognostication: getFullReading(reading[0], reading[1], futureCard) });
+            
+            let idx = 0;
+            if (!p) p = shuffled[idx++] || { rank: { label: '?' }, suit: 'MAJOR' };
+            if (!pr) pr = shuffled[idx++] || { rank: { label: '?' }, suit: 'MAJOR' };
+            if (!f) f = shuffled[idx++] || { rank: { label: '?' }, suit: 'MAJOR' };
+
+            setFortuneData({ 
+               past: p, present: pr, future: f 
+            });
             if (!winningFoundations) setShowFortune(true);
           };
 
@@ -624,30 +722,33 @@
                     <div className="p-2 bg-gradient-to-br from-[#1e293b] to-[#0F172A] rounded-lg shadow-lg border border-[#D4AF37]/30 relative overflow-hidden"><Crown className="text-[#D4AF37] w-5 h-5 relative z-10" /></div>
                     <div><h1 className="font-serif font-bold text-lg tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-[#E6DBC4] to-[#D4AF37]">ARCANA SOLITAIRE</h1><p className="text-[10px] text-[#C5A059] uppercase tracking-widest">{message}</p></div>
                   </div>
-                  <div className="flex items-center gap-4 text-xs sm:text-sm w-full md:w-auto justify-between md:justify-end bg-[#020617]/40 p-2 md:p-0 rounded-lg">
+                  <div className="flex flex-wrap justify-center items-center gap-2 sm:gap-4 text-xs sm:text-sm w-full md:w-auto md:justify-end bg-[#020617]/40 p-2 md:p-0 rounded-lg">
                      <div className="flex items-center gap-2 group relative cursor-help" title="Sanity" ref={sanityRef}>
                        <HeadProfile size={16} className={`${sanity < 30 ? 'text-red-500 animate-bounce' : 'text-purple-400'}`} />
-                       <div className="w-24 h-2 bg-[#1e293b] rounded-full overflow-hidden border border-[#D4AF37]/20"><div className={`h-full transition-all duration-500 ${sanity < 30 ? 'bg-red-900' : 'bg-[#C5A059]'}`} style={{ width: `${sanity}%` }} /></div>
+                       <div className="w-16 sm:w-24 h-2 bg-[#1e293b] rounded-full overflow-hidden border border-[#D4AF37]/20"><div className={`h-full transition-all duration-500 ${sanity < 30 ? 'bg-red-900' : 'bg-[#C5A059]'}`} style={{ width: `${sanity}%` }} /></div>
                        <GameTooltip title="Sanity" lore="The mind is a fragile vessel..." mechanics="Decreases with moves. Game over at 0. Restore via Foundations." />
                      </div>
                      <div className="flex items-center gap-1 group relative" ref={vialRef}>
-                        <div className={`flex items-center gap-1 px-3 py-1 rounded-full border border-cyan-500/30 bg-cyan-900/20 text-cyan-200`}><FlaskConical size={14} className="fill-current text-cyan-400" /><span className="font-serif">{sanityVials}</span></div>
+                        <div className={`flex items-center gap-1 px-2 sm:px-3 py-1 rounded-full border border-cyan-500/30 bg-cyan-900/20 text-cyan-200`}><FlaskConical size={14} className="fill-current text-cyan-400" /><span className="font-serif">{sanityVials}</span></div>
                         <GameTooltip title="Sanity Vials" lore="Bottled essence of clarity." mechanics="Automatically consumed when Sanity drops below 20. Restores 20 Sanity." />
                      </div>
                      <div className="flex items-center gap-1 group relative">
-                        <button onClick={useDivineSpark} disabled={stock.length === 0 && sparks > 0} className={`flex items-center gap-1 px-3 py-1 rounded-full border transition-all ${sparks > 0 ? 'border-rose-500/50 bg-rose-900/20 text-rose-200 hover:scale-105' : 'border-slate-800 bg-slate-900 text-slate-600 cursor-not-allowed'}`}><Flame size={14} className={sparks > 0 ? 'fill-current animate-pulse text-rose-400' : ''} /><span className="font-serif">{sparks}</span></button>
+                        <button onClick={useDivineSpark} disabled={stock.length === 0 && sparks > 0} className={`flex items-center gap-1 px-2 sm:px-3 py-1 rounded-full border transition-all ${sparks > 0 ? 'border-rose-500/50 bg-rose-900/20 text-rose-200 hover:scale-105' : 'border-slate-800 bg-slate-900 text-slate-600 cursor-not-allowed'}`}><Flame size={14} className={sparks > 0 ? 'fill-current animate-pulse text-rose-400' : ''} /><span className="font-serif">{sparks}</span></button>
                         <button onClick={() => setShowShop(true)} className="p-1 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors"><Plus size={12} /></button>
                         <GameTooltip title="Divine Spark" lore="Reveal the unseen." mechanics="Reveals Stock. Pick one to move to Talon." position="left-1/2 -translate-x-1/2" />
                      </div>
-                     <div className="flex flex-col items-end min-w-[3rem] group relative cursor-help">
+                     <div className="flex flex-col items-end min-w-[2rem] sm:min-w-[3rem] group relative cursor-help">
                        <span className="text-[#94A3B8] text-[8px] uppercase tracking-wider">Essence</span><span className="font-serif text-emerald-400">{score}</span>
                        <GameTooltip title="Essence" lore="The currency of ascension." mechanics="Score. Spend in Shop for Sparks." position="right-0" />
                      </div>
-                     <div className="h-6 w-px bg-[#D4AF37]/20 mx-1"></div>
-                     <button onClick={() => setShowShop(true)} className="p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="The Emporium"><ShoppingBag size={18} /><GameTooltip title="The Emporium" lore="Mystical wares for the weary traveler." mechanics="Purchase Sanity and Divine Sparks." position="right-0" /></button>
-                     <button onClick={handleRevealPath} className="p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="Reveal Path"><Eye size={18} /><GameTooltip title="Reveal Path" lore="The eye sees what the mind misses." mechanics="Highlights a valid move (Costs 5 Sanity). If none exist, your Fate is Sealed." position="right-0" /></button>
-                     <button onClick={handleUndo} disabled={history.length === 0} className={`p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group ${history.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`} title="Undo Move"><Undo2 size={18} /><GameTooltip title="Reverse Time" lore="Turn back the clock." mechanics="Undo last move. Costs 5 Sanity." position="right-0" /></button>
-                     <button onClick={startNewGame} className="p-2 hover:bg-[#D4AF37]/10 rounded-full text-red-400/80 hover:text-red-400 transition-colors" title="New Game"><RotateCcw size={18} /></button>
+                     <div className="h-6 w-px bg-[#D4AF37]/20 mx-1 hidden sm:block"></div>
+                     <div className="flex items-center gap-1">
+                        <button onClick={() => setShowGrimoire(true)} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="Grimoire"><BookOpen size={18} /><GameTooltip title="The Grimoire" lore="Knowledge is the truest power." mechanics="View the rules and lore." position="right-0" /></button>
+                        <button onClick={() => setShowShop(true)} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="The Emporium"><ShoppingBag size={18} /><GameTooltip title="The Emporium" lore="Mystical wares for the weary traveler." mechanics="Purchase Sanity and Divine Sparks." position="right-0" /></button>
+                        <button onClick={handleRevealPath} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="Reveal Path"><Eye size={18} /><GameTooltip title="Reveal Path" lore="The eye sees what the mind misses." mechanics="Highlights a valid move (Costs 5 Sanity). If none exist, your Fate is Sealed." position="right-0" /></button>
+                        <button onClick={handleUndo} disabled={history.length === 0} className={`p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group ${history.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`} title="Undo Move"><Undo2 size={18} /><GameTooltip title="Reverse Time" lore="Turn back the clock." mechanics="Undo last move. Costs 5 Sanity." position="right-0" /></button>
+                        <button onClick={() => startNewGame(true)} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-red-400/80 hover:text-red-400 transition-colors" title="New Game"><RotateCcw size={18} /></button>
+                     </div>
                   </div>
                 </div>
               </header>
@@ -700,6 +801,130 @@
                  {flyingWisp && (<><style>{`@keyframes flyWisp { 0% { top: ${flyingWisp.src.top}px; left: ${flyingWisp.src.left}px; opacity: 1; transform: scale(1); } 100% { top: ${flyingWisp.dest.top}px; left: ${flyingWisp.dest.left}px; opacity: 0; transform: scale(2); } }`}</style><div className="fixed z-[100] pointer-events-none text-cyan-400 filter drop-shadow-[0_0_15px_rgba(34,211,238,0.8)]" style={{ width: flyingWisp.src.width, height: flyingWisp.src.height, animation: 'flyWisp 0.8s ease-in-out forwards' }}><Sparkles size={32} className="animate-pulse" /></div></>)}
               </main>
 
+              {/* Grimoire Modal */}
+              {showGrimoire && (
+                <div className="fixed inset-0 z-[90] bg-[#020617]/95 backdrop-blur-md p-4 md:p-8 flex items-center justify-center animate-in fade-in duration-300">
+                   <div className="bg-[#0A1226] border border-[#D4AF37]/40 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto custom-scrollbar relative p-6 md:p-10 shadow-[0_0_50px_rgba(0,0,0,0.8)]">
+                      <button onClick={handleCloseGrimoire} className="absolute top-4 right-4 text-[#94A3B8] hover:text-[#E6DBC4]"><X size={28} /></button>
+                      <div className="text-center mb-8">
+                         <BookOpen className="w-12 h-12 text-[#D4AF37] mx-auto mb-4" />
+                         <h2 className="text-4xl font-serif text-[#E6DBC4]">The Grimoire</h2>
+                         <p className="text-[#94A3B8] italic mt-2">A guide to navigating the threads of fate.</p>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-[#E6DBC4] text-sm leading-relaxed">
+                          <div className="space-y-6">
+                              <section>
+                                  <h3 className="text-xl font-serif text-[#D4AF37] mb-2 border-b border-[#D4AF37]/20 pb-1">The Arcana</h3>
+                                  <p className="mb-2"><strong className="text-white">Minor Arcana:</strong> Composed of four suits reflecting earthly themes. <span className="text-amber-500 font-bold">Wands</span> and <span className="text-slate-400 font-bold">Swords</span> carry <strong className="text-white">Active</strong> energies. <span className="text-cyan-400 font-bold">Cups</span> and <span className="text-emerald-400 font-bold">Pentacles</span> carry <strong className="text-white">Passive</strong> energies. They suggest how grand themes manifest in daily life.</p>
+                                  <p><strong className="text-purple-400">Major Arcana:</strong> Transcendent cards numbered 0 (The Fool) to XXI (The World). They reveal underlying divine themes with profound, long-term influence.</p>
+                              </section>
+                              <section>
+                                  <h3 className="text-xl font-serif text-[#D4AF37] mb-2 border-b border-[#D4AF37]/20 pb-1">The Ritual (Rules)</h3>
+                                  <p className="mb-2"><strong className="text-white">The Tableau:</strong> Build downward in descending numerical order, strictly alternating between Active and Passive energies.</p>
+                                  <p className="mb-2"><strong className="text-purple-400">The Divine Wildcard:</strong> Major Arcana are unbound by earthly rules. In the Tableau, they may be placed upon any card, and any card may be placed upon them.</p>
+                                  <p><strong className="text-white">The Foundations:</strong> Build upward to achieve order. Minors scale from Ace to King by suit. Majors scale from 0 to XXI.</p>
+                              </section>
+                          </div>
+                          
+                          <div className="space-y-6">
+                              <section>
+                                  <h3 className="text-xl font-serif text-[#D4AF37] mb-2 border-b border-[#D4AF37]/20 pb-1">The Currencies</h3>
+                                  <div className="space-y-4">
+                                      <div className="flex items-start gap-3">
+                                          <div className="p-2 bg-purple-900/30 rounded-lg border border-purple-500/30 mt-1"><HeadProfile className="w-5 h-5 text-purple-400" /></div>
+                                          <div>
+                                              <h4 className="font-bold text-purple-400">Sanity</h4>
+                                              <p className="text-xs text-[#94A3B8]">The mental toll of peering into the void. Decreases with every move. Reaching zero fractures your mind (Game Over). Restored by completing foundations.</p>
+                                          </div>
+                                      </div>
+                                      <div className="flex items-start gap-3">
+                                          <div className="p-2 bg-cyan-900/30 rounded-lg border border-cyan-500/30 mt-1"><FlaskConical className="w-5 h-5 text-cyan-400" /></div>
+                                          <div>
+                                              <h4 className="font-bold text-cyan-400">Sanity Vials</h4>
+                                              <p className="text-xs text-[#94A3B8]">Bottled clarity. Automatically consumed to restore 20 Sanity when your mind begins to slip (drops below 20).</p>
+                                          </div>
+                                      </div>
+                                      <div className="flex items-start gap-3">
+                                          <div className="p-2 bg-rose-900/30 rounded-lg border border-rose-500/30 mt-1"><Flame className="w-5 h-5 text-rose-400" /></div>
+                                          <div>
+                                              <h4 className="font-bold text-rose-400">Divine Spark</h4>
+                                              <p className="text-xs text-[#94A3B8]">Use this to bend fate. Consuming a spark allows you to search the Stock and draw a specific card immediately.</p>
+                                          </div>
+                                      </div>
+                                      <div className="flex items-start gap-3">
+                                          <div className="p-2 bg-emerald-900/30 rounded-lg border border-emerald-500/30 mt-1"><Gem className="w-5 h-5 text-emerald-400" /></div>
+                                          <div>
+                                              <h4 className="font-bold text-emerald-400">Essence</h4>
+                                              <p className="text-xs text-[#94A3B8]">Your spiritual score. Earned by achieving order and moving cards to the Foundations. Can be traded at the Emporium.</p>
+                                          </div>
+                                      </div>
+                                  </div>
+                              </section>
+                          </div>
+                      </div>
+                      
+                      <div className="mt-8 text-center">
+                          <button onClick={handleCloseGrimoire} className="px-10 py-3 bg-[#D4AF37] text-[#050A19] font-bold rounded-full hover:bg-[#E6DBC4] transition-colors shadow-[0_0_20px_rgba(212,175,55,0.4)]">
+                              Begin the Ritual
+                          </button>
+                      </div>
+                   </div>
+                </div>
+              )}
+
+              {/* Reading Tracker Modal */}
+              {showReadingTracker && !showGrimoire && (
+                <div className="fixed inset-0 z-[80] bg-[#020617]/90 backdrop-blur-md p-6 flex flex-col items-center justify-center animate-in fade-in duration-500">
+                   <div className="max-w-4xl w-full text-center">
+                      <Eye className="w-12 h-12 text-[#D4AF37] mx-auto mb-4 opacity-80" />
+                      <h2 className="text-3xl font-serif text-[#E6DBC4] mb-2">The Threads of Fate</h2>
+                      <p className="text-[#94A3B8] italic mb-10">As you weave the cards, the energies of your actions manifest into a reading of your destiny.</p>
+                      
+                      <div className="flex justify-center gap-4 sm:gap-8 md:gap-16 mb-12">
+                          <div className="flex flex-col items-center w-24 sm:w-32 md:w-40">
+                              <span className="text-xs text-[#D4AF37] uppercase tracking-widest mb-3">Past</span>
+                              {readingState.past ? (
+                                  <div className="animate-in zoom-in duration-700 shadow-2xl shadow-black/50 w-full"><Card card={readingState.past} faceUp={true} fullWidth={true} /></div>
+                              ) : (
+                                  <div className="w-full aspect-[420/720] border-2 border-dashed border-[#D4AF37]/30 rounded-md bg-[#050A19]/50 flex flex-col items-center justify-center text-[#D4AF37]/40 font-serif text-sm px-2">
+                                      <span className="mb-2">I</span>
+                                      <span className="text-[10px] text-center">5 placements</span>
+                                  </div>
+                              )}
+                          </div>
+                          <div className="flex flex-col items-center w-24 sm:w-32 md:w-40">
+                              <span className="text-xs text-[#D4AF37] uppercase tracking-widest mb-3">Present</span>
+                              {readingState.present ? (
+                                  <div className="animate-in zoom-in duration-700 shadow-2xl shadow-black/50 w-full"><Card card={readingState.present} faceUp={true} fullWidth={true} /></div>
+                              ) : (
+                                  <div className="w-full aspect-[420/720] border-2 border-dashed border-[#D4AF37]/30 rounded-md bg-[#050A19]/50 flex flex-col items-center justify-center text-[#D4AF37]/40 font-serif text-sm px-2">
+                                      <span className="mb-2">II</span>
+                                      <span className="text-[10px] text-center">15 placements</span>
+                                  </div>
+                              )}
+                          </div>
+                          <div className="flex flex-col items-center w-24 sm:w-32 md:w-40">
+                              <span className="text-xs text-[#D4AF37] uppercase tracking-widest mb-3">Future</span>
+                              {readingState.future ? (
+                                  <div className="animate-in zoom-in duration-700 shadow-2xl shadow-black/50 w-full"><Card card={readingState.future} faceUp={true} fullWidth={true} /></div>
+                              ) : (
+                                  <div className="w-full aspect-[420/720] border-2 border-dashed border-[#D4AF37]/30 rounded-md bg-[#050A19]/50 flex flex-col items-center justify-center text-[#D4AF37]/40 font-serif text-sm px-2">
+                                      <span className="mb-2">III</span>
+                                      <span className="text-[10px] text-center">25 placements</span>
+                                  </div>
+                              )}
+                          </div>
+                      </div>
+                      
+                      <button onClick={() => setShowReadingTracker(false)} className="px-8 py-3 bg-transparent border border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37] hover:text-[#050A19] font-bold rounded-full transition-all shadow-[0_0_15px_rgba(212,175,55,0.2)]">
+                         Continue the Ritual
+                      </button>
+                   </div>
+                </div>
+              )}
+
+              {/* Stock Picker Modal */}
               {showStockPicker && (
                 <div className="fixed inset-0 z-[60] bg-[#020617]/95 backdrop-blur-md p-6 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
                    <h3 className="text-2xl font-serif text-[#D4AF37] mb-2">Clairvoyance</h3>
@@ -714,83 +939,62 @@
                 </div>
               )}
 
+              {/* Shop Modal */}
               {showShop && <div className="fixed inset-0 z-[60] bg-[#020617]/95 backdrop-blur-lg flex items-center justify-center p-4 animate-in fade-in duration-300"><div className="bg-[#050A19] border border-[#D4AF37]/40 rounded-xl p-8 max-w-lg w-full relative"><button onClick={handleShopClose} className="absolute top-4 right-4 text-[#94A3B8] hover:text-[#E6DBC4]"><X size={24} /></button><div className="flex flex-col items-center text-center mb-8"><div className="p-4 bg-[#D4AF37]/10 rounded-full mb-4 ring-1 ring-[#D4AF37]/40"><ShoppingBag className="w-8 h-8 text-[#D4AF37]" /></div><h2 className="text-3xl font-serif text-[#E6DBC4]">The Emporium</h2><p className="text-[#94A3B8] text-sm mt-2">Mystical wares for the weary traveler.</p>{sanity <= 0 && <p className="text-red-400 text-xs font-bold mt-2 animate-pulse uppercase tracking-wider">Sanity Depleted - Restore or Perish</p>}</div><div className="space-y-4"><div className="space-y-2"><h3 className="text-xs text-[#94A3B8] uppercase tracking-widest font-bold">Vitality (In-App Purchase)</h3><div className={`flex items-center justify-between p-4 bg-gradient-to-r from-[#0F172A] to-[#1e293b] rounded-lg border border-[#D4AF37]/30 hover:border-[#D4AF37]/60 transition-colors group`}><div className="flex items-center gap-3"><div className="relative"><HeadProfile className="text-[#D4AF37]" size={24} /><div className="absolute -top-1 -right-1 bg-[#C5A059] text-black text-[8px] px-1 rounded-full font-bold">5x</div></div><div className="text-left"><div className="text-[#E6DBC4] font-bold group-hover:text-[#D4AF37] transition-colors">Bundle of 5 Vials</div><div className="text-xs text-[#94A3B8]">Adds 5 Vials to Inventory</div></div></div><button onClick={() => purchaseVials(5)} className={`px-5 py-2 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] hover:from-[#C5A059] hover:to-[#DAA520] text-[#050A19] text-sm font-bold rounded-full transition-all shadow-lg shadow-[#D4AF37]/20`}>$0.99</button></div><div className={`flex items-center justify-between p-4 bg-[#E6DBC4]/5 rounded-lg border border-[#E6DBC4]/5 hover:border-[#D4AF37]/20 transition-colors`}><div className="flex items-center gap-3"><HeadProfile className="text-[#D4AF37]/70" size={20} /><div className="text-left"><div className="text-[#E6DBC4] font-bold">Single Vial</div><div className="text-xs text-[#94A3B8]">Adds 1 Vial to Inventory</div></div></div><button onClick={() => purchaseVials(1)} className={`px-4 py-1.5 bg-[#1e293b] hover:bg-[#334155] text-[#E6DBC4] text-sm font-bold rounded-full transition-colors`}>$0.25</button></div></div><div className="pt-4 border-t border-[#D4AF37]/20 space-y-2"><h3 className="text-xs text-[#94A3B8] uppercase tracking-widest font-bold">Essence Exchange</h3><div className="flex items-center justify-between p-4 bg-[#E6DBC4]/5 rounded-lg border border-[#E6DBC4]/5 hover:border-[#D4AF37]/30 transition-colors"><div className="flex items-center gap-3"><Flame className="text-[#D4AF37]" size={20} /><div className="text-left"><div className="text-[#E6DBC4] font-bold">Divine Spark</div><div className="text-xs text-[#94A3B8]">Reveal & Pick from Stock</div></div></div><button onClick={() => buySpark(500, 1)} className="px-4 py-1.5 bg-[#1e293b] hover:bg-[#334155] text-[#E6DBC4] text-sm font-bold rounded-full transition-colors flex items-center gap-1">500 <span className="text-[10px] uppercase opacity-70">Ess</span></button></div></div></div><div className="mt-6 pt-6 border-t border-[#D4AF37]/20 flex justify-between items-center text-sm"><span className="text-[#94A3B8]">Your Essence:</span><span className="font-serif text-[#10B981] text-lg flex items-center gap-1"><Gem size={14} />{score}</span></div></div></div>}
 
+              {/* Fortune / Game Over Modal */}
               {(gameState === 'won' || gameState === 'lost' || gameState === 'fortune') && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#020617]/95 backdrop-blur-md p-4 animate-in fade-in duration-1000">
-                   <div className="text-center max-w-3xl w-full">
+                <div className="fixed inset-0 z-[100] bg-[#020617]/95 backdrop-blur-md p-4 animate-in fade-in duration-1000 flex flex-col items-center justify-center overflow-y-auto">
+                   <div className="text-center max-w-5xl w-full bg-[#0A1226]/80 p-6 md:p-10 rounded-2xl border border-[#D4AF37]/40 shadow-[0_0_50px_rgba(0,0,0,0.8)] my-auto">
                       {gameState === 'won' ? (
                          <>
-                           <Trophy className="w-16 h-16 text-[#D4AF37] mx-auto mb-4" />
-                           <h2 className="text-4xl font-serif text-[#E6DBC4] mb-2">Ascension</h2>
-                           <p className="text-[#94A3B8] mb-8">The ritual is complete.</p>
-                            
-                           <div className="grid grid-cols-4 gap-6 mb-8 text-center bg-[#050A19] p-6 rounded-xl border border-[#D4AF37]/30">
-                              <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Time</div><div className="text-2xl font-serif text-[#E6DBC4]">{formatTime(gameDuration)}</div></div>
-                              <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Moves</div><div className="text-2xl font-serif text-[#E6DBC4]">{moves}</div></div>
-                              <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Essence</div><div className="text-2xl font-serif text-[#10B981]">{score}</div></div>
-                              <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Sparks</div><div className="text-2xl font-serif text-[#D4AF37]">{sparks}</div></div>
-                           </div>
-
-                           {fortuneData && (
-                              <div className="grid grid-cols-3 gap-4 mb-8">
-                                 {[fortuneData.past, fortuneData.present, fortuneData.future].map((card, i) => (
-                                   <div key={i} className="flex flex-col items-center animate-in slide-in-from-bottom duration-700" style={{ animationDelay: `${i * 200}ms` }}>
-                                      <span className="text-xs text-[#D4AF37] uppercase tracking-widest mb-2">{['Past', 'Present', 'Future'][i]}</span>
-                                      <div className="mb-2"><Card card={card} faceUp={true} /></div>
-                                      <h5 className="text-[#E6DBC4] font-serif text-sm font-bold mt-2 text-center">{getCardFullName(card)}</h5>
-                                      <p className="text-[10px] text-[#94A3B8] mt-1 max-w-[150px] leading-tight px-2 text-center">{getCardMeaning(card)}</p>
-                                   </div>
-                                 ))}
-                              </div>
-                            )}
-                            {fortuneData && (
-                              <div className="mt-4 mb-6 p-3 bg-[#050A19] rounded-xl border border-[#D4AF37]/20">
-                                <p className="text-[#E6DBC4] font-serif text-lg italic leading-relaxed">"{fortuneData.prognostication}"</p>
-                              </div>
-                            )}
+                           <Trophy className="w-12 h-12 text-[#D4AF37] mx-auto mb-2" />
+                           <h2 className="text-3xl md:text-5xl font-serif font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#E6DBC4] via-[#D4AF37] to-[#E6DBC4] mb-2">Ascension</h2>
+                           <p className="text-[#94A3B8] mb-8 italic">The ritual is complete.</p>
                          </>
                       ) : gameState === 'fortune' ? (
                          <>
-                            <div className="mb-4"><div className="inline-flex p-4 rounded-full border border-[#D4AF37]/50 bg-[#D4AF37]/10"><Eye className="w-8 h-8 text-[#D4AF37]" /></div></div>
-                            <h2 className="text-2xl md:text-4xl font-serif font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#E6DBC4] via-[#D4AF37] to-[#E6DBC4] mb-1">The Threads Have Tightened</h2>
-                            <p className="text-[#94A3B8] text-sm mb-4 italic">"No further moves exist in this timeline. But the cards still speak..."</p>
-                            
-                            {fortuneData && (
-                              <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4">
-                                 {[fortuneData.past, fortuneData.present, fortuneData.future].map((card, i) => (
-                                   <div key={i} className="flex flex-col items-center animate-in slide-in-from-bottom duration-700" style={{ animationDelay: `${i * 200}ms` }}>
-                                      <span className="text-xs text-[#D4AF37] uppercase tracking-widest mb-2">{['Past', 'Present', 'Future'][i]}</span>
-                                      <div className="mb-2"><Card card={card} faceUp={true} /></div>
-                                      <h5 className="text-[#E6DBC4] font-serif text-sm font-bold mt-2 text-center">{getCardFullName(card)}</h5>
-                                      <p className="text-[10px] text-[#94A3B8] mt-1 max-w-[150px] leading-tight px-2 text-center">{getCardMeaning(card)}</p>
-                                   </div>
-                                 ))}
-                              </div>
-                            )}
-                            {fortuneData && (
-                              <div className="mt-4 mb-6 p-3 bg-[#050A19] rounded-xl border border-[#D4AF37]/20">
-                                <p className="text-[#E6DBC4] font-serif text-lg italic leading-relaxed">"{fortuneData.prognostication}"</p>
-                              </div>
-                            )}
-                            <div className="grid grid-cols-3 gap-4 mb-6 text-center bg-[#050A19] p-4 rounded-xl border border-[#D4AF37]/30">
-                              <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Time</div><div className="text-xl font-serif text-[#E6DBC4]">{formatTime(gameDuration)}</div></div>
-                              <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Moves</div><div className="text-xl font-serif text-[#E6DBC4]">{moves}</div></div>
-                              <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Essence</div><div className="text-xl font-serif text-[#10B981]">{score}</div></div>
-                            </div>
+                            <Eye className="w-12 h-12 text-[#D4AF37] mx-auto mb-2" />
+                            <h2 className="text-3xl md:text-5xl font-serif font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#E6DBC4] via-[#D4AF37] to-[#E6DBC4] mb-2">The Threads Have Tightened</h2>
+                            <p className="text-[#94A3B8] mb-8 italic">"No further moves exist in this timeline. But the cards still speak..."</p>
                          </>
                       ) : (
                          <>
-                            <Skull className="w-16 h-16 text-red-700 mx-auto mb-4" />
-                            <h2 className="text-4xl text-red-600 font-serif mb-4">The Void Consumes</h2>
-                            <div className="grid grid-cols-3 gap-4 mb-6 text-center bg-[#050A19] p-4 rounded-xl border border-red-900/30">
-                              <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Time</div><div className="text-xl font-serif text-[#E6DBC4]">{formatTime(gameDuration)}</div></div>
-                              <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Moves</div><div className="text-xl font-serif text-[#E6DBC4]">{moves}</div></div>
-                              <div><div className="text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Essence</div><div className="text-xl font-serif text-[#10B981]">{score}</div></div>
-                            </div>
+                            <Skull className="w-12 h-12 text-red-700 mx-auto mb-2" />
+                            <h2 className="text-3xl md:text-5xl font-serif font-bold text-red-600 mb-2">The Void Consumes</h2>
+                            <p className="text-red-400/80 mb-8 italic">Sanity has abandoned you.</p>
                          </>
                       )}
-                      <button onClick={startNewGame} className="px-8 py-3 bg-[#E6DBC4] text-[#050A19] font-bold rounded-full hover:scale-105 transition-transform shadow-[0_0_20px_rgba(230,219,196,0.3)]">Begin New Journey</button>
+
+                      {fortuneData && (
+                         <div className="flex flex-wrap justify-center gap-4 sm:gap-8 md:gap-12 mb-8">
+                            {[fortuneData.past, fortuneData.present, fortuneData.future].map((card, i) => {
+                               const positionName = ['Past', 'Present', 'Future'][i];
+                               return (
+                                 <div key={i} className="flex flex-col items-center animate-in slide-in-from-bottom duration-700 w-24 sm:w-32 md:w-40" style={{ animationDelay: `${i * 200}ms` }}>
+                                    <span className="text-xs text-[#D4AF37] uppercase tracking-widest mb-3">{positionName}</span>
+                                    <div className="mb-4 shadow-2xl shadow-black/50 w-full"><Card card={card} faceUp={true} fullWidth={true} /></div>
+                                    <h5 className="text-[#E6DBC4] font-serif text-sm md:text-base font-bold text-center leading-tight mb-2">{getCardFullName(card)}</h5>
+                                    <p className="text-[10px] md:text-xs text-[#94A3B8] text-center leading-relaxed px-1">
+                                       {getSpecificFortune(card, positionName.toLowerCase())}
+                                    </p>
+                                 </div>
+                               );
+                            })}
+                         </div>
+                      )}
+                      
+                      {/* Horizontal Stats Block */}
+                      <div className={`flex flex-wrap justify-center items-center gap-8 md:gap-16 mb-8 py-5 border-y ${gameState === 'lost' ? 'border-red-900/30 bg-[#050A19]' : 'border-[#D4AF37]/20 bg-[#050A19]/50'} rounded-lg mx-auto max-w-2xl`}>
+                         <div><div className="text-[10px] md:text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Time</div><div className="text-xl md:text-2xl font-serif text-[#E6DBC4]">{formatTime(gameDuration)}</div></div>
+                         <div><div className="text-[10px] md:text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Moves</div><div className="text-xl md:text-2xl font-serif text-[#E6DBC4]">{moves}</div></div>
+                         <div><div className="text-[10px] md:text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Essence</div><div className="text-xl md:text-2xl font-serif text-[#10B981]">{score}</div></div>
+                         {gameState === 'won' && <div><div className="text-[10px] md:text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Sparks</div><div className="text-xl md:text-2xl font-serif text-[#D4AF37]">{sparks}</div></div>}
+                      </div>
+
+                      <button onClick={startNewGame} className="px-10 py-3 text-sm md:text-base bg-[#E6DBC4] text-[#050A19] font-bold rounded-full hover:scale-105 transition-transform shadow-[0_0_30px_rgba(230,219,196,0.3)]">
+                         Begin New Journey
+                      </button>
                    </div>
                 </div>
               )}
