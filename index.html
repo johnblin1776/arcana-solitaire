@@ -218,25 +218,28 @@
 
           useEffect(() => { setImgError(false); setCurrentExt('jpg'); }, [card]);
 
+          const parchmentColor = "border-[#E4D4B5]";
+          const jitter = sanityLow ? `rotate(${Math.random() * 2 - 1}deg) translate(${Math.random() * 2 - 1}px, ${Math.random() * 2 - 1}px)` : '';
+
+          // 1. Explicitly check for faceUp === false first so the back renders even if card is null
+          if (faceUp === false) {
+            return (
+              <div onClick={onClick} className={`${sizeClasses} rounded-md border ${parchmentColor} shadow-xl cursor-pointer hover:brightness-125 transition-all relative overflow-hidden bg-cover bg-center`}
+                   style={{ ...style, transform: style.transform || jitter, backgroundImage: `url('${BASE_ASSET_URL}/card_back.png${ASSET_VERSION}')` }}>
+              </div>
+            );
+          }
+
+          // 2. If it's faceUp but there's no card data, it's an empty slot
           if (!card) return <div className={`${sizeClasses} border-2 border-dashed border-[#D4AF37]/20 rounded-md bg-[#050A19]/50 flex items-center justify-center`}><span className="text-[#D4AF37]/30 text-xs font-serif italic">Empty</span></div>;
 
-          const parchmentColor = "border-[#E4D4B5]";
           const parchmentBg = "bg-[#E4D4B5]";
           const suitConfig = SUITS[card.suit];
           const SuitIcon = suitConfig.icon;
           const inkColor = suitConfig.type === 'passive' ? 'text-[#8B1C1C]' : 'text-[#0F172A]';
 
-          if (!faceUp) {
-            return (
-              <div onClick={onClick} className={`${sizeClasses} rounded-md border ${parchmentColor} shadow-xl cursor-pointer hover:brightness-125 transition-all relative overflow-hidden bg-cover bg-center`}
-                   style={{ ...style, backgroundImage: `url('${BASE_ASSET_URL}/card_back.png${ASSET_VERSION}')` }}>
-              </div>
-            );
-          }
-
           const baseName = getCardBaseName(card);
           const imageUrl = baseName ? `${BASE_ASSET_URL}/${baseName}.${currentExt}${ASSET_VERSION}` : null;
-          const jitter = sanityLow ? `rotate(${Math.random() * 2 - 1}deg) translate(${Math.random() * 2 - 1}px, ${Math.random() * 2 - 1}px)` : '';
           const hintClass = isHint ? "animate-jiggle ring-4 ring-[#D4AF37] shadow-[0_0_20px_rgba(212,175,55,0.6)] z-50" : "";
 
           const handleImageError = () => {
@@ -725,8 +728,13 @@
 
           const handleEmptyColumnClick = (e, colIndex) => {
             if (!selectedCard || gameState !== 'playing') return;
-            if ((selectedCard.card.suit !== 'MAJOR' && selectedCard.card.rank.val === 14) || selectedCard.card.suit === 'MAJOR') moveCard(selectedCard, { type: 'tableau', colIndex });
-            else setMessage("Only Kings or Major Arcana can fill empty spaces.");
+            const val = selectedCard.card.rank.val;
+            const suit = selectedCard.card.suit;
+            if ((suit !== 'MAJOR' && val === 14) || suit === 'MAJOR') {
+              moveCard(selectedCard, { type: 'tableau', colIndex });
+            } else {
+              setMessage("Only Kings or Major Arcana can fill empty spaces.");
+            }
           };
 
           const handleDragStart = (e, card, source) => {
@@ -758,12 +766,17 @@
           };
 
           const handleDivinePick = (idx) => {
-             saveGameState();
+             saveGameState(); // Save state before consuming spark
+             const pickedCard = stock[idx];
              const newStock = [...stock];
-             setTalon([...talon, { ...newStock.splice(idx, 1)[0], faceUp: true }]);
-             setStock(newStock); setSparks(s => s - 1); setShowStockPicker(false);
+             newStock.splice(idx, 1);
+             setStock(newStock);
+             setTalon([...talon, { ...pickedCard, faceUp: true }]);
+             setSparks(s => s - 1);
+             setShowStockPicker(false);
           };
 
+          // Shop Purchases
           const buySpark = (cost, amount) => {
             if (score >= cost) { setScore(s => s - cost); setSparks(s => s + amount); setMessage("The bargain is struck."); }
             else setMessage("You lack the Essence for this trade.");
@@ -813,6 +826,7 @@
                      <div className="flex items-center gap-1">
                         <button onClick={() => setShowGrimoire(true)} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="Grimoire"><BookOpen size={18} /><GameTooltip title="The Grimoire" lore="Knowledge is the truest power." mechanics="View the rules and lore." position="right-0" /></button>
                         <button onClick={() => setShowShop(true)} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="The Emporium"><ShoppingBag size={18} /><GameTooltip title="The Emporium" lore="Mystical wares for the weary traveler." mechanics="Purchase Sanity and Divine Sparks." position="right-0" /></button>
+                        <button onClick={handleRevealPath} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="Reveal Path"><Eye size={18} /><GameTooltip title="Reveal Path" lore="The eye sees what the mind misses." mechanics="Highlights a valid move (Costs 5 Sanity). If none exist, your Fate is Sealed." position="right-0" /></button>
                         <button onClick={handleUndo} disabled={history.length === 0} className={`p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group ${history.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`} title="Undo Move"><Undo2 size={18} /><GameTooltip title="Reverse Time" lore="Turn back the clock." mechanics="Undo last move. Costs 5 Sanity." position="right-0" /></button>
                         <button onClick={() => startNewGame(true)} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-red-400/80 hover:text-red-400 transition-colors" title="New Game"><RotateCcw size={18} /></button>
                      </div>
