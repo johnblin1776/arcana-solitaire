@@ -40,11 +40,11 @@
 
         const MAJOR_FILENAMES = [
           "The_Fool", "I_The_Magician", "II_The_High_Priestess", "III_The_Empress", 
-          "IV_The_Emperor", "V_The_Hierophant", "VI_The_Lovers", "VII_The_Chariot", 
+          "IV_The_Emperor", "V_The_Hierophant", "VI_The_Lovers", "VII_Chariot", 
           "VIII_Strength", "IX_The_Hermit", "X_Wheel_of_Fortune", "XI_Justice", 
           "XII_The_Hanged_Man", "XIII_Death", "XIV_Temperance", "XV_The_Devil", 
           "XVI_The_Tower", "XVII_The_Star", "XVIII_The_Moon", "XIX_The_Sun", 
-          "XX_Judgement", "XXI_The_World"
+          "XX_Judgment", "XXI_The_World"
         ];
 
         const NUMBER_WORDS = {
@@ -73,7 +73,7 @@
           return `${rankName} of ${SUITS[card.suit].name}`;
         };
 
-        // Tarot Meanings Engine
+        // --- Option 3: Tarot Meanings "Mad Libs" Engine ---
         const MAJOR_MEANINGS = [
           "a leap of faith into the unknown", // 0
           "the manifestation of your willpower", // 1
@@ -137,6 +137,25 @@
           if (position === 'present') return `Currently, you find yourself experiencing ${meaning}.`;
           if (position === 'future') return `Your future path is marked by ${meaning}.`;
           return meaning;
+        };
+
+        const getFullReading = (past, present, future) => {
+           if (!past || !present || !future) return "The mists are thick. Tread carefully.";
+           
+           const getTheme = (card) => {
+             if (card.suit === 'MAJOR') return "profound transformation";
+             if (card.suit === 'WANDS') return "fiery ambition";
+             if (card.suit === 'CUPS') return "deep emotion";
+             if (card.suit === 'SWORDS') return "sharp truth";
+             if (card.suit === 'PENTACLES') return "worldly foundation";
+             return "mystery";
+           };
+
+           const pTheme = getTheme(past);
+           const prTheme = getTheme(present);
+           const fTheme = getTheme(future);
+
+           return `You have risen from a past of ${pTheme}, navigating a present shaped by ${prTheme}. The cards foretell a destiny of ${fTheme}.`;
         };
 
         const formatTime = (ms) => {
@@ -221,7 +240,6 @@
           const parchmentColor = "border-[#E4D4B5]";
           const jitter = sanityLow ? `rotate(${Math.random() * 2 - 1}deg) translate(${Math.random() * 2 - 1}px, ${Math.random() * 2 - 1}px)` : '';
 
-          // 1. Explicitly check for faceUp === false first so the back renders even if card is null
           if (faceUp === false) {
             return (
               <div onClick={onClick} className={`${sizeClasses} rounded-md border ${parchmentColor} shadow-xl cursor-pointer hover:brightness-125 transition-all relative overflow-hidden bg-cover bg-center`}
@@ -230,7 +248,6 @@
             );
           }
 
-          // 2. If it's faceUp but there's no card data, it's an empty slot
           if (!card) return <div className={`${sizeClasses} border-2 border-dashed border-[#D4AF37]/20 rounded-md bg-[#050A19]/50 flex items-center justify-center`}><span className="text-[#D4AF37]/30 text-xs font-serif italic">Empty</span></div>;
 
           const parchmentBg = "bg-[#E4D4B5]";
@@ -313,6 +330,8 @@
           const [hintCard, setHintCard] = useState(null);
           const [draggedCard, setDraggedCard] = useState(null);
 
+          const [isAutoPlaying, setIsAutoPlaying] = useState(false);
+
           const initGame = () => {
             const hasSeenGrimoire = localStorage.getItem('arcanaGrimoireSeen');
             const savedState = localStorage.getItem('tarotSolitaireSave');
@@ -337,6 +356,7 @@
                 setHistory(parsed.history || []);
                 setReadingState(parsed.readingState || { past: null, present: null, future: null });
                 setGameState('playing');
+                setIsAutoPlaying(false);
                 setStartTime(Date.now()); 
                 return;
               } catch (e) {}
@@ -382,6 +402,7 @@
             setSelectedCard(null);
             setHintCard(null);
             setShowFortune(false);
+            setIsAutoPlaying(false);
             
             setShowReadingTracker(true); 
             setGameState('playing');
@@ -392,18 +413,71 @@
 
           // Monitor Sanity for Auto-Vial Activation OR Exhaustion
           useEffect(() => {
-            if (gameState === 'playing') {
+            if (gameState === 'playing' && !isAutoPlaying) {
               if (sanity < 20 && sanityVials > 0) activateVial();
               else if (sanity <= 0) {
                  setShowShop(true);
                  setMessage("Your mind fractures... seeking stability.");
               }
             }
-          }, [sanity, gameState]); 
+          }, [sanity, gameState, isAutoPlaying]); 
+
+          // Auto-Complete Check Logic
+          const canAutoComplete = () => {
+             if (stock.length > 0 || talon.length > 0) return false;
+             let hasCards = false;
+             for (let col of tableau) {
+               if (col.length > 0) hasCards = true;
+               for (let card of col) {
+                 if (!card.faceUp) return false;
+               }
+             }
+             return hasCards;
+          };
+
+          // Trigger Auto-Complete
+          useEffect(() => {
+             if (gameState === 'playing' && !isAutoPlaying) {
+                 if (canAutoComplete()) {
+                     setIsAutoPlaying(true);
+                     setMessage("Destiny fulfills itself...");
+                 }
+             }
+          }, [tableau, stock, talon, gameState, isAutoPlaying]);
+
+          // Execute Auto-Complete sequence
+          useEffect(() => {
+              if (isAutoPlaying && gameState === 'playing' && !flyingCard && !flyingWisp) {
+                  const timer = setTimeout(() => {
+                      let moved = false;
+                      for (let c = 0; c < 9; c++) {
+                          const col = tableau[c];
+                          if (col.length === 0) continue;
+                          const topCard = col[col.length - 1];
+                          
+                          if (isValidFoundationMove(topCard, foundations[topCard.suit])) {
+                              const sourceEl = tableauRefs.current[c]?.lastElementChild || tableauRefs.current[c];
+                              const destEl = foundationRefs.current[topCard.suit];
+                              
+                              triggerFly(sourceEl, destEl, topCard, () => {
+                                  moveCard({ type: 'tableau', colIndex: c, cardIndex: col.length - 1 }, { type: 'foundation', suitKey: topCard.suit });
+                              }, 150); 
+                              
+                              moved = true;
+                              break;
+                          }
+                      }
+                      if (!moved) {
+                          setIsAutoPlaying(false); 
+                      }
+                  }, 50); 
+                  return () => clearTimeout(timer);
+              }
+          }, [isAutoPlaying, tableau, foundations, gameState, flyingCard, flyingWisp]);
 
           // Auto-Deadlock Detection
           useEffect(() => {
-            if (gameState !== 'playing') return;
+            if (gameState !== 'playing' || isAutoPlaying) return;
 
             const checkDeadlock = () => {
               // 1. Tableau moves
@@ -422,7 +496,7 @@
                     const targetCol = tableau[t];
                     const targetCard = targetCol.length > 0 ? targetCol[targetCol.length - 1] : null;
                     if (isValidTableauMove(card, targetCard)) {
-                       if (i === 0 && targetCol.length === 0) continue; // Moving bottom card to empty spot isn't real progress
+                       if (i === 0 && targetCol.length === 0) continue; 
                        return false;
                     }
                   }
@@ -458,7 +532,6 @@
 
             const deadlockTimer = setTimeout(() => {
                 const totalCardsDealt = tableau.reduce((acc, col) => acc + col.length, 0);
-                // Only trigger deadlock if game is thoroughly loaded and started
                 if (totalCardsDealt > 0 && checkDeadlock()) {
                    setGameDuration(Date.now() - startTime); 
                    setGameState('fortune'); 
@@ -467,7 +540,7 @@
             }, 1000);
 
             return () => clearTimeout(deadlockTimer);
-          }, [tableau, talon, stock, foundations, gameState, startTime]); 
+          }, [tableau, talon, stock, foundations, gameState, startTime, isAutoPlaying]); 
 
           useEffect(() => {
             if (foundationEffect) {
@@ -500,7 +573,7 @@
           };
 
           const handleUndo = () => {
-            if (history.length === 0) return;
+            if (history.length === 0 || isAutoPlaying) return;
             if (sanity < 5) { setMessage("Not enough Sanity to reverse time."); return; }
             const prevState = history[history.length - 1];
             setHistory(prev => prev.slice(0, -1));
@@ -536,7 +609,9 @@
           };
 
           const moveCard = (source, dest) => {
-            setHintCard(null); saveGameState();
+            setHintCard(null); 
+            if (!isAutoPlaying) saveGameState();
+
             const newTableau = [...tableau], newFoundations = { ...foundations }, newTalon = [...talon];
             let points = 0, sanityChange = -1, msg = "", cardsMoving = [];
             let newPlacements = tableauPlacements;
@@ -562,15 +637,17 @@
                newPlacements += 1;
                
                // Trigger readings based on tableau placements
-               if (newPlacements === 5 && !newReadingState.past) {
-                  newReadingState.past = cardsMoving[0];
-                  triggerDraw = true;
-               } else if (newPlacements === 15 && !newReadingState.present) {
-                  newReadingState.present = cardsMoving[0];
-                  triggerDraw = true;
-               } else if (newPlacements === 25 && !newReadingState.future) {
-                  newReadingState.future = cardsMoving[0];
-                  triggerDraw = true;
+               if (!isAutoPlaying) {
+                   if (newPlacements === 5 && !newReadingState.past) {
+                      newReadingState.past = cardsMoving[0];
+                      triggerDraw = true;
+                   } else if (newPlacements === 15 && !newReadingState.present) {
+                      newReadingState.present = cardsMoving[0];
+                      triggerDraw = true;
+                   } else if (newPlacements === 25 && !newReadingState.future) {
+                      newReadingState.future = cardsMoving[0];
+                      triggerDraw = true;
+                   }
                }
             }
             else if (dest.type === 'foundation') {
@@ -583,7 +660,10 @@
                if (isComplete) {
                  if (isMajor) { points += 100; msg = "The Major Arcana is complete! (+100 Essence)"; setFoundationEffect({ pile: dest.suitKey, type: 'major' }); }
                  else { points += 50; msg = `${SUITS[dest.suitKey].name} restored. (+50 Essence)`; setFoundationEffect({ pile: dest.suitKey, type: 'minor' }); }
-               } else { sanityChange = 5; msg = "Order restored."; }
+               } else { 
+                 if (!isAutoPlaying) { sanityChange = 5; msg = "Order restored."; }
+                 else { sanityChange = 0; }
+               }
 
                if (Object.values(newFoundations).reduce((acc, pile) => acc + pile.length, 0) === 78) {
                  setGameState('won'); setGameDuration(Date.now() - startTime); generateFortune(newFoundations);
@@ -593,7 +673,11 @@
             if (source.type === 'talon') setTalon(newTalon);
             setTableau(newTableau); setFoundations(newFoundations); setMoves(m => m + 1); setScore(s => s + points);
             setTableauPlacements(newPlacements); setReadingState(newReadingState);
-            modifySanity(sanityChange, msg); setSelectedCard(null);
+            
+            if (!isAutoPlaying) {
+               modifySanity(sanityChange, msg); 
+            }
+            setSelectedCard(null);
 
             if (triggerDraw) {
                setShowReadingTracker(true);
@@ -601,10 +685,10 @@
           };
 
           const handleRevealPath = () => {
-            if (gameState !== 'playing') return;
+            if (gameState !== 'playing' || isAutoPlaying) return;
             modifySanity(-5);
             // We use the same auto-deadlock logic hook, so we just simulate checking if there are manual moves left, otherwise it's just a hint trigger.
-            const validMove = talon.length > 0 ? {card: talon[talon.length - 1]} : null; // Quick fallback stub since we removed findAnyValidMove to favor the auto-deadlock hook.
+            const validMove = talon.length > 0 ? {card: talon[talon.length - 1]} : null; 
             if (validMove) {
               setHintCard(validMove.card); setMessage("The path is illuminated (-5 Sanity)."); setTimeout(() => setHintCard(null), 2000);
             }
@@ -627,12 +711,12 @@
             if (!winningFoundations) setShowFortune(true);
           };
 
-          const triggerFly = (srcEl, destEl, card, callback) => {
+          const triggerFly = (srcEl, destEl, card, callback, duration = 500) => {
             if (!srcEl || !destEl) { callback(); return; }
             setFlyingCard({
               src: { top: srcEl.getBoundingClientRect().top, left: srcEl.getBoundingClientRect().left, width: srcEl.getBoundingClientRect().width, height: srcEl.getBoundingClientRect().height },
               dest: { top: destEl.getBoundingClientRect().top, left: destEl.getBoundingClientRect().left, width: destEl.getBoundingClientRect().width, height: destEl.getBoundingClientRect().height },
-              card, callback
+              card, callback, duration
             });
           };
 
@@ -646,7 +730,7 @@
           };
 
           useEffect(() => {
-            if (flyingCard) { const timer = setTimeout(() => { flyingCard.callback(); setFlyingCard(null); }, 500); return () => clearTimeout(timer); }
+            if (flyingCard) { const timer = setTimeout(() => { flyingCard.callback(); setFlyingCard(null); }, flyingCard.duration || 500); return () => clearTimeout(timer); }
           }, [flyingCard]);
 
           useEffect(() => {
@@ -669,7 +753,7 @@
           };
 
           const handleStockClick = () => {
-            if (gameState !== 'playing') return;
+            if (gameState !== 'playing' || isAutoPlaying) return;
             setHintCard(null); saveGameState();
             if (stock.length === 0) {
               if (talon.length === 0) return;
@@ -681,7 +765,7 @@
           };
 
           const handleCardClick = (e, card, source) => {
-            if (gameState !== 'playing') return;
+            if (gameState !== 'playing' || isAutoPlaying) return;
             setHintCard(null);
             if (source.type === 'tableau' && !card.faceUp) return;
             
@@ -703,7 +787,7 @@
           };
 
           const handleFoundationClick = (suitKey) => {
-            if (gameState !== 'playing') return;
+            if (gameState !== 'playing' || isAutoPlaying) return;
             const pile = foundations[suitKey];
             const topCard = pile.length > 0 ? pile[pile.length - 1] : null;
 
@@ -727,7 +811,7 @@
           };
 
           const handleEmptyColumnClick = (e, colIndex) => {
-            if (!selectedCard || gameState !== 'playing') return;
+            if (!selectedCard || gameState !== 'playing' || isAutoPlaying) return;
             const val = selectedCard.card.rank.val;
             const suit = selectedCard.card.suit;
             if ((suit !== 'MAJOR' && val === 14) || suit === 'MAJOR') {
@@ -738,14 +822,35 @@
           };
 
           const handleDragStart = (e, card, source) => {
-            if (!card.faceUp) { e.preventDefault(); return; }
+            if (!card.faceUp || isAutoPlaying) { e.preventDefault(); return; }
             setDraggedCard({ card, source });
             e.dataTransfer.setData('text/plain', JSON.stringify(source));
+            
+            if (source.type === 'tableau') {
+              const colEl = tableauRefs.current[source.colIndex];
+              if (colEl) {
+                 const container = document.createElement('div');
+                 container.style.position = 'absolute'; container.style.top = '-9999px'; container.style.zIndex = '1000'; container.style.width = '100px';
+                 document.body.appendChild(container);
+                 const startIndex = source.cardIndex + 1;
+                 let baseTop = 0;
+                 const startNode = colEl.children[startIndex];
+                 if (startNode) baseTop = parseFloat(startNode.style.top) || 0;
+                 for (let i = startIndex; i < colEl.children.length; i++) {
+                    const clone = colEl.children[i].cloneNode(true);
+                    const currentTop = parseFloat(colEl.children[i].style.top) || 0;
+                    clone.style.position = 'absolute'; clone.style.top = `${currentTop - baseTop}rem`; clone.style.left = '0'; clone.style.width = '100%';
+                    container.appendChild(clone);
+                 }
+                 e.dataTransfer.setDragImage(container, 40, 40);
+                 setTimeout(() => document.body.removeChild(container), 0);
+              }
+            }
           };
 
           const handleDrop = (e, target) => {
             e.preventDefault();
-            if (!draggedCard) return;
+            if (!draggedCard || isAutoPlaying) return;
             const { card, source } = draggedCard;
             let success = false;
             if (target.type === 'tableau') {
@@ -776,7 +881,6 @@
              setShowStockPicker(false);
           };
 
-          // Shop Purchases
           const buySpark = (cost, amount) => {
             if (score >= cost) { setScore(s => s - cost); setSparks(s => s + amount); setMessage("The bargain is struck."); }
             else setMessage("You lack the Essence for this trade.");
@@ -827,7 +931,7 @@
                         <button onClick={() => setShowGrimoire(true)} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="Grimoire"><BookOpen size={18} /><GameTooltip title="The Grimoire" lore="Knowledge is the truest power." mechanics="View the rules and lore." position="right-0" /></button>
                         <button onClick={() => setShowShop(true)} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="The Emporium"><ShoppingBag size={18} /><GameTooltip title="The Emporium" lore="Mystical wares for the weary traveler." mechanics="Purchase Sanity and Divine Sparks." position="right-0" /></button>
                         <button onClick={handleRevealPath} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group" title="Reveal Path"><Eye size={18} /><GameTooltip title="Reveal Path" lore="The eye sees what the mind misses." mechanics="Highlights a valid move (Costs 5 Sanity). If none exist, your Fate is Sealed." position="right-0" /></button>
-                        <button onClick={handleUndo} disabled={history.length === 0} className={`p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group ${history.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`} title="Undo Move"><Undo2 size={18} /><GameTooltip title="Reverse Time" lore="Turn back the clock." mechanics="Undo last move. Costs 5 Sanity." position="right-0" /></button>
+                        <button onClick={handleUndo} disabled={history.length === 0 || isAutoPlaying} className={`p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-[#C5A059] hover:text-[#E6DBC4] transition-colors relative group ${history.length === 0 || isAutoPlaying ? 'opacity-50 cursor-not-allowed' : ''}`} title="Undo Move"><Undo2 size={18} /><GameTooltip title="Reverse Time" lore="Turn back the clock." mechanics="Undo last move. Costs 5 Sanity." position="right-0" /></button>
                         <button onClick={() => startNewGame(true)} className="p-1.5 sm:p-2 hover:bg-[#D4AF37]/10 rounded-full text-red-400/80 hover:text-red-400 transition-colors" title="New Game"><RotateCcw size={18} /></button>
                      </div>
                   </div>
@@ -879,7 +983,7 @@
                       </div>
                     ))}
                  </div>
-                 {flyingCard && (<><style>{`@keyframes flyCard { 0% { top: ${flyingCard.src.top}px; left: ${flyingCard.src.left}px; transform: scale(1) rotate(0deg); } 50% { transform: scale(1.1) rotate(180deg); z-index: 1000; } 100% { top: ${flyingCard.dest.top}px; left: ${flyingCard.dest.left}px; transform: scale(1) rotate(360deg); } }`}</style><div className="fixed z-[100] pointer-events-none" style={{ width: flyingCard.src.width, height: flyingCard.src.height, animation: 'flyCard 0.5s ease-in-out forwards' }}><Card card={flyingCard.card} faceUp={true} /></div></>)}
+                 {flyingCard && (<><style>{`@keyframes flyCard { 0% { top: ${flyingCard.src.top}px; left: ${flyingCard.src.left}px; transform: scale(1) rotate(0deg); } 50% { transform: scale(1.1) rotate(180deg); z-index: 1000; } 100% { top: ${flyingCard.dest.top}px; left: ${flyingCard.dest.left}px; transform: scale(1) rotate(360deg); } }`}</style><div className="fixed z-[100] pointer-events-none" style={{ width: flyingCard.src.width, height: flyingCard.src.height, animation: `flyCard ${flyingCard.duration || 500}ms ease-in-out forwards` }}><Card card={flyingCard.card} faceUp={true} /></div></>)}
                  {flyingWisp && (<><style>{`@keyframes flyWisp { 0% { top: ${flyingWisp.src.top}px; left: ${flyingWisp.src.left}px; opacity: 1; transform: scale(1); } 100% { top: ${flyingWisp.dest.top}px; left: ${flyingWisp.dest.left}px; opacity: 0; transform: scale(2); } }`}</style><div className="fixed z-[100] pointer-events-none text-cyan-400 filter drop-shadow-[0_0_15px_rgba(34,211,238,0.8)]" style={{ width: flyingWisp.src.width, height: flyingWisp.src.height, animation: 'flyWisp 0.8s ease-in-out forwards' }}><Sparkles size={32} className="animate-pulse" /></div></>)}
               </main>
 
@@ -968,34 +1072,49 @@
                           <div className="flex flex-col items-center w-24 sm:w-32 md:w-40">
                               <span className="text-xs text-[#D4AF37] uppercase tracking-widest mb-3">Past</span>
                               {readingState.past ? (
-                                  <div className="animate-in zoom-in duration-700 shadow-2xl shadow-black/50 w-full"><Card card={readingState.past} faceUp={true} fullWidth={true} /></div>
+                                  <div className="animate-in zoom-in duration-700 shadow-2xl shadow-black/50 w-full mb-4"><Card card={readingState.past} faceUp={true} fullWidth={true} /></div>
                               ) : (
-                                  <div className="w-full aspect-[420/720] border-2 border-dashed border-[#D4AF37]/30 rounded-md bg-[#050A19]/50 flex flex-col items-center justify-center text-[#D4AF37]/40 font-serif text-sm px-2">
+                                  <div className="w-full aspect-[420/720] border-2 border-dashed border-[#D4AF37]/30 rounded-md bg-[#050A19]/50 flex flex-col items-center justify-center text-[#D4AF37]/40 font-serif text-sm px-2 mb-4">
                                       <span className="mb-2">I</span>
                                       <span className="text-[10px] text-center">5 placements</span>
                                   </div>
+                              )}
+                              {readingState.past && (
+                                 <p className="text-[10px] md:text-xs text-[#94A3B8] text-center leading-relaxed px-1 animate-in fade-in duration-1000">
+                                    {getSpecificFortune(readingState.past, 'past')}
+                                 </p>
                               )}
                           </div>
                           <div className="flex flex-col items-center w-24 sm:w-32 md:w-40">
                               <span className="text-xs text-[#D4AF37] uppercase tracking-widest mb-3">Present</span>
                               {readingState.present ? (
-                                  <div className="animate-in zoom-in duration-700 shadow-2xl shadow-black/50 w-full"><Card card={readingState.present} faceUp={true} fullWidth={true} /></div>
+                                  <div className="animate-in zoom-in duration-700 shadow-2xl shadow-black/50 w-full mb-4"><Card card={readingState.present} faceUp={true} fullWidth={true} /></div>
                               ) : (
-                                  <div className="w-full aspect-[420/720] border-2 border-dashed border-[#D4AF37]/30 rounded-md bg-[#050A19]/50 flex flex-col items-center justify-center text-[#D4AF37]/40 font-serif text-sm px-2">
+                                  <div className="w-full aspect-[420/720] border-2 border-dashed border-[#D4AF37]/30 rounded-md bg-[#050A19]/50 flex flex-col items-center justify-center text-[#D4AF37]/40 font-serif text-sm px-2 mb-4">
                                       <span className="mb-2">II</span>
                                       <span className="text-[10px] text-center">15 placements</span>
                                   </div>
+                              )}
+                              {readingState.present && (
+                                 <p className="text-[10px] md:text-xs text-[#94A3B8] text-center leading-relaxed px-1 animate-in fade-in duration-1000">
+                                    {getSpecificFortune(readingState.present, 'present')}
+                                 </p>
                               )}
                           </div>
                           <div className="flex flex-col items-center w-24 sm:w-32 md:w-40">
                               <span className="text-xs text-[#D4AF37] uppercase tracking-widest mb-3">Future</span>
                               {readingState.future ? (
-                                  <div className="animate-in zoom-in duration-700 shadow-2xl shadow-black/50 w-full"><Card card={readingState.future} faceUp={true} fullWidth={true} /></div>
+                                  <div className="animate-in zoom-in duration-700 shadow-2xl shadow-black/50 w-full mb-4"><Card card={readingState.future} faceUp={true} fullWidth={true} /></div>
                               ) : (
-                                  <div className="w-full aspect-[420/720] border-2 border-dashed border-[#D4AF37]/30 rounded-md bg-[#050A19]/50 flex flex-col items-center justify-center text-[#D4AF37]/40 font-serif text-sm px-2">
+                                  <div className="w-full aspect-[420/720] border-2 border-dashed border-[#D4AF37]/30 rounded-md bg-[#050A19]/50 flex flex-col items-center justify-center text-[#D4AF37]/40 font-serif text-sm px-2 mb-4">
                                       <span className="mb-2">III</span>
                                       <span className="text-[10px] text-center">25 placements</span>
                                   </div>
+                              )}
+                              {readingState.future && (
+                                 <p className="text-[10px] md:text-xs text-[#94A3B8] text-center leading-relaxed px-1 animate-in fade-in duration-1000">
+                                    {getSpecificFortune(readingState.future, 'future')}
+                                 </p>
                               )}
                           </div>
                       </div>
@@ -1025,83 +1144,88 @@
               {/* Shop Modal */}
               {showShop && <div className="fixed inset-0 z-[60] bg-[#020617]/95 backdrop-blur-lg flex items-center justify-center p-4 animate-in fade-in duration-300"><div className="bg-[#050A19] border border-[#D4AF37]/40 rounded-xl p-8 max-w-lg w-full relative"><button onClick={handleShopClose} className="absolute top-4 right-4 text-[#94A3B8] hover:text-[#E6DBC4]"><X size={24} /></button><div className="flex flex-col items-center text-center mb-8"><div className="p-4 bg-[#D4AF37]/10 rounded-full mb-4 ring-1 ring-[#D4AF37]/40"><ShoppingBag className="w-8 h-8 text-[#D4AF37]" /></div><h2 className="text-3xl font-serif text-[#E6DBC4]">The Emporium</h2><p className="text-[#94A3B8] text-sm mt-2">Mystical wares for the weary traveler.</p>{sanity <= 0 && <p className="text-red-400 text-xs font-bold mt-2 animate-pulse uppercase tracking-wider">Sanity Depleted - Restore or Perish</p>}</div><div className="space-y-4"><div className="space-y-2"><h3 className="text-xs text-[#94A3B8] uppercase tracking-widest font-bold">Vitality (In-App Purchase)</h3><div className={`flex items-center justify-between p-4 bg-gradient-to-r from-[#0F172A] to-[#1e293b] rounded-lg border border-[#D4AF37]/30 hover:border-[#D4AF37]/60 transition-colors group`}><div className="flex items-center gap-3"><div className="relative"><HeadProfile className="text-[#D4AF37]" size={24} /><div className="absolute -top-1 -right-1 bg-[#C5A059] text-black text-[8px] px-1 rounded-full font-bold">5x</div></div><div className="text-left"><div className="text-[#E6DBC4] font-bold group-hover:text-[#D4AF37] transition-colors">Bundle of 5 Vials</div><div className="text-xs text-[#94A3B8]">Adds 5 Vials to Inventory</div></div></div><button onClick={() => purchaseVials(5)} className={`px-5 py-2 bg-gradient-to-r from-[#D4AF37] to-[#B8860B] hover:from-[#C5A059] hover:to-[#DAA520] text-[#050A19] text-sm font-bold rounded-full transition-all shadow-lg shadow-[#D4AF37]/20`}>$0.99</button></div><div className={`flex items-center justify-between p-4 bg-[#E6DBC4]/5 rounded-lg border border-[#E6DBC4]/5 hover:border-[#D4AF37]/20 transition-colors`}><div className="flex items-center gap-3"><HeadProfile className="text-[#D4AF37]/70" size={20} /><div className="text-left"><div className="text-[#E6DBC4] font-bold">Single Vial</div><div className="text-xs text-[#94A3B8]">Adds 1 Vial to Inventory</div></div></div><button onClick={() => purchaseVials(1)} className={`px-4 py-1.5 bg-[#1e293b] hover:bg-[#334155] text-[#E6DBC4] text-sm font-bold rounded-full transition-colors`}>$0.25</button></div></div><div className="pt-4 border-t border-[#D4AF37]/20 space-y-2"><h3 className="text-xs text-[#94A3B8] uppercase tracking-widest font-bold">Essence Exchange</h3><div className="flex items-center justify-between p-4 bg-[#E6DBC4]/5 rounded-lg border border-[#E6DBC4]/5 hover:border-[#D4AF37]/30 transition-colors"><div className="flex items-center gap-3"><Flame className="text-[#D4AF37]" size={20} /><div className="text-left"><div className="text-[#E6DBC4] font-bold">Divine Spark</div><div className="text-xs text-[#94A3B8]">Reveal & Pick from Stock</div></div></div><button onClick={() => buySpark(500, 1)} className="px-4 py-1.5 bg-[#1e293b] hover:bg-[#334155] text-[#E6DBC4] text-sm font-bold rounded-full transition-colors flex items-center gap-1">500 <span className="text-[10px] uppercase opacity-70">Ess</span></button></div></div></div><div className="mt-6 pt-6 border-t border-[#D4AF37]/20 flex justify-between items-center text-sm"><span className="text-[#94A3B8]">Your Essence:</span><span className="font-serif text-[#10B981] text-lg flex items-center gap-1"><Gem size={14} />{score}</span></div></div></div>}
 
-              {/* Fortune / Game Over Modal */}
-              {(gameState === 'won' || gameState === 'lost' || gameState === 'fortune') && (
-                <div className="fixed inset-0 z-[100] bg-[#020617]/95 backdrop-blur-md p-4 animate-in fade-in duration-1000 flex flex-col items-center justify-center overflow-y-auto">
-                   <div className="text-center max-w-5xl w-full bg-[#0A1226]/80 p-6 md:p-10 rounded-2xl border border-[#D4AF37]/40 shadow-[0_0_50px_rgba(0,0,0,0.8)] my-auto">
-                      {gameState === 'won' ? (
-                         <>
-                           <Trophy className="w-12 h-12 text-[#D4AF37] mx-auto mb-2" />
-                           <h2 className="text-3xl md:text-5xl font-serif font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#E6DBC4] via-[#D4AF37] to-[#E6DBC4] mb-2">Ascension</h2>
-                           <p className="text-[#94A3B8] mb-8 italic">The ritual is complete.</p>
-                         </>
-                      ) : gameState === 'fortune' ? (
-                         <>
-                            <Eye className="w-12 h-12 text-[#D4AF37] mx-auto mb-2" />
-                            <h2 className="text-3xl md:text-5xl font-serif font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#E6DBC4] via-[#D4AF37] to-[#E6DBC4] mb-2">The Threads Have Tightened</h2>
-                            <p className="text-[#94A3B8] mb-8 italic">"No further moves exist in this timeline. But the cards still speak..."</p>
-                         </>
-                      ) : (
-                         <>
-                            <Skull className="w-12 h-12 text-red-700 mx-auto mb-2" />
-                            <h2 className="text-3xl md:text-5xl font-serif font-bold text-red-600 mb-2">The Void Consumes</h2>
-                            <p className="text-red-400/80 mb-8 italic">Sanity has abandoned you.</p>
-                         </>
-                      )}
+      {/* Fortune / Game Over Modal */}
+      {(gameState === 'won' || gameState === 'lost' || gameState === 'fortune') && (
+        <div className="fixed inset-0 z-[100] bg-[#020617]/95 backdrop-blur-md p-4 animate-in fade-in duration-1000 flex flex-col items-center justify-center overflow-y-auto">
+           <div className="text-center max-w-5xl w-full bg-[#0A1226]/80 p-6 md:p-10 rounded-2xl border border-[#D4AF37]/40 shadow-[0_0_50px_rgba(0,0,0,0.8)] my-auto mt-auto mb-auto">
+              {gameState === 'won' ? (
+                 <>
+                   <Trophy className="w-12 h-12 text-[#D4AF37] mx-auto mb-2" />
+                   <h2 className="text-3xl md:text-5xl font-serif font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#E6DBC4] via-[#D4AF37] to-[#E6DBC4] mb-2">Ascension</h2>
+                   <p className="text-[#94A3B8] mb-8 italic">The ritual is complete.</p>
+                 </>
+              ) : gameState === 'fortune' ? (
+                 <>
+                    <Eye className="w-12 h-12 text-[#D4AF37] mx-auto mb-2" />
+                    <h2 className="text-3xl md:text-5xl font-serif font-bold text-transparent bg-clip-text bg-gradient-to-r from-[#E6DBC4] via-[#D4AF37] to-[#E6DBC4] mb-2">The Threads Have Tightened</h2>
+                    <p className="text-[#94A3B8] mb-8 italic">"No further moves exist in this timeline. But the cards still speak..."</p>
+                 </>
+              ) : (
+                 <>
+                    <Skull className="w-12 h-12 text-red-700 mx-auto mb-2" />
+                    <h2 className="text-3xl md:text-5xl font-serif font-bold text-red-600 mb-2">The Void Consumes</h2>
+                    <p className="text-red-400/80 mb-8 italic">Sanity has abandoned you.</p>
+                 </>
+              )}
 
-                      {fortuneData && (
-                         <div className="flex flex-wrap justify-center gap-4 sm:gap-8 md:gap-12 mb-8">
-                            {[fortuneData.past, fortuneData.present, fortuneData.future].map((card, i) => {
-                               const positionName = ['Past', 'Present', 'Future'][i];
-                               return (
-                                 <div key={i} className="flex flex-col items-center animate-in slide-in-from-bottom duration-700 w-24 sm:w-32 md:w-40" style={{ animationDelay: `${i * 200}ms` }}>
-                                    <span className="text-xs text-[#D4AF37] uppercase tracking-widest mb-3">{positionName}</span>
-                                    <div className="mb-4 shadow-2xl shadow-black/50 w-full"><Card card={card} faceUp={true} fullWidth={true} /></div>
-                                    <h5 className="text-[#E6DBC4] font-serif text-sm md:text-base font-bold text-center leading-tight mb-2">{getCardFullName(card)}</h5>
-                                    <p className="text-[10px] md:text-xs text-[#94A3B8] text-center leading-relaxed px-1">
-                                       {getSpecificFortune(card, positionName.toLowerCase())}
-                                    </p>
-                                 </div>
-                               );
-                            })}
+              {fortuneData && (
+                 <div className="flex flex-wrap justify-center gap-4 sm:gap-8 md:gap-12 mb-8">
+                    {[fortuneData.past, fortuneData.present, fortuneData.future].map((card, i) => {
+                       const positionName = ['Past', 'Present', 'Future'][i];
+                       return (
+                         <div key={i} className="flex flex-col items-center animate-in slide-in-from-bottom duration-700 w-24 sm:w-32 md:w-40" style={{ animationDelay: `${i * 200}ms` }}>
+                            <span className="text-xs text-[#D4AF37] uppercase tracking-widest mb-3">{positionName}</span>
+                            <div className="mb-4 shadow-2xl shadow-black/50 w-full"><Card card={card} faceUp={true} fullWidth={true} /></div>
+                            <h5 className="text-[#E6DBC4] font-serif text-sm md:text-base font-bold text-center leading-tight mb-2">{getCardFullName(card)}</h5>
+                            <p className="text-[10px] md:text-xs text-[#94A3B8] text-center leading-relaxed px-1">
+                               {getSpecificFortune(card, positionName.toLowerCase())}
+                            </p>
                          </div>
-                      )}
-                      
-                      {/* Horizontal Stats Block */}
-                      <div className={`flex flex-wrap justify-center items-center gap-8 md:gap-16 mb-8 py-5 border-y ${gameState === 'lost' ? 'border-red-900/30 bg-[#050A19]' : 'border-[#D4AF37]/20 bg-[#050A19]/50'} rounded-lg mx-auto max-w-2xl`}>
-                         <div><div className="text-[10px] md:text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Time</div><div className="text-xl md:text-2xl font-serif text-[#E6DBC4]">{formatTime(gameDuration)}</div></div>
-                         <div><div className="text-[10px] md:text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Moves</div><div className="text-xl md:text-2xl font-serif text-[#E6DBC4]">{moves}</div></div>
-                         <div><div className="text-[10px] md:text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Essence</div><div className="text-xl md:text-2xl font-serif text-[#10B981]">{score}</div></div>
-                         {gameState === 'won' && <div><div className="text-[10px] md:text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Sparks</div><div className="text-xl md:text-2xl font-serif text-[#D4AF37]">{sparks}</div></div>}
-                      </div>
-
-                      <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
-                        {(gameState === 'fortune' || gameState === 'lost') && history.length > 0 && sanity >= 5 && (
-                           <button onClick={() => { handleUndo(); }} className="px-6 py-3 bg-[#050A19] border border-[#D4AF37] text-[#D4AF37] font-bold rounded-full hover:bg-[#D4AF37] hover:text-[#050A19] transition-colors shadow-[0_0_15px_rgba(212,175,55,0.2)] flex items-center gap-2">
-                             <Undo2 size={18} /> Undo Last Move (-5 Sanity)
-                           </button>
-                        )}
-                        <button onClick={() => startNewGame(true)} className="px-10 py-3 text-sm md:text-base bg-[#E6DBC4] text-[#050A19] font-bold rounded-full hover:scale-105 transition-transform shadow-[0_0_30px_rgba(230,219,196,0.3)]">
-                           Begin New Journey
-                        </button>
-                      </div>
-                   </div>
+                       );
+                    })}
+                 </div>
+              )}
+              
+              {fortuneData && (
+                <div className="mt-4 mb-6 p-4 bg-[#050A19] rounded-xl border border-[#D4AF37]/20 max-w-3xl mx-auto">
+                  <p className="text-[#E6DBC4] font-serif text-lg md:text-xl italic leading-relaxed">"{fortuneData.prognostication}"</p>
                 </div>
               )}
               
-              <style>{`
-                @keyframes jiggle { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg); } }
-                .animate-jiggle { animation: jiggle 0.3s ease-in-out infinite; }
-                .animate-spin-slow { animation: spin 8s linear infinite; }
-                @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-                .custom-scrollbar::-webkit-scrollbar { width: 8px; }
-                .custom-scrollbar::-webkit-scrollbar-track { background: rgba(212, 175, 55, 0.1); border-radius: 10px; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(212, 175, 55, 0.4); border-radius: 10px; }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(212, 175, 55, 0.6); }
-              `}</style>
-            </div>
-          );
-        }
+              <div className={`flex flex-wrap justify-center items-center gap-8 md:gap-16 mb-8 py-5 border-y ${gameState === 'lost' ? 'border-red-900/30 bg-[#050A19]' : 'border-[#D4AF37]/20 bg-[#050A19]/50'} rounded-lg mx-auto max-w-2xl`}>
+                 <div><div className="text-[10px] md:text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Time</div><div className="text-xl md:text-2xl font-serif text-[#E6DBC4]">{formatTime(gameDuration)}</div></div>
+                 <div><div className="text-[10px] md:text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Moves</div><div className="text-xl md:text-2xl font-serif text-[#E6DBC4]">{moves}</div></div>
+                 <div><div className="text-[10px] md:text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Essence</div><div className="text-xl md:text-2xl font-serif text-[#10B981]">{score}</div></div>
+                 {gameState === 'won' && <div><div className="text-[10px] md:text-xs text-[#94A3B8] uppercase tracking-widest mb-1">Sparks</div><div className="text-xl md:text-2xl font-serif text-[#D4AF37]">{sparks}</div></div>}
+              </div>
+
+              <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
+                {(gameState === 'fortune' || gameState === 'lost') && history.length > 0 && sanity >= 5 && (
+                   <button onClick={() => { handleUndo(); }} className="px-6 py-3 bg-[#050A19] border border-[#D4AF37] text-[#D4AF37] font-bold rounded-full hover:bg-[#D4AF37] hover:text-[#050A19] transition-colors shadow-[0_0_15px_rgba(212,175,55,0.2)] flex items-center gap-2">
+                     <Undo2 size={18} /> Undo Last Move (-5 Sanity)
+                   </button>
+                )}
+                <button onClick={() => startNewGame(true)} className="px-10 py-3 text-sm md:text-base bg-[#E6DBC4] text-[#050A19] font-bold rounded-full hover:scale-105 transition-transform shadow-[0_0_30px_rgba(230,219,196,0.3)]">
+                   Begin New Journey
+                </button>
+              </div>
+           </div>
+        </div>
+      )}
+      
+      <style>{`
+        @keyframes jiggle { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg); } }
+        .animate-jiggle { animation: jiggle 0.3s ease-in-out infinite; }
+        .animate-spin-slow { animation: spin 8s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(212, 175, 55, 0.1); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(212, 175, 55, 0.4); border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(212, 175, 55, 0.6); }
+      `}</style>
+    </div>
+  );
+}
 
         const root = createRoot(document.getElementById('root'));
         root.render(<App />);
